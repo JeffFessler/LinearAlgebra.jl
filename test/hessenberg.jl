@@ -320,4 +320,18 @@ end
     @test U == U2
 end
 
+@testset "eigensolvers" begin
+    for T in (Float16, Float32, Float64, ComplexF16, ComplexF32, ComplexF64)
+        H = UpperHessenberg(randn(T, 5,5))
+        λ = eigvals(H)
+        F = eigen(H)
+        @test λ ≈ eigvals(Matrix(H)) ≈ F.values
+        @test H * F.vectors ≈ F.vectors * Diagonal(λ)
+        if T <: LinearAlgebra.BlasFloat
+            λ2 = @invoke eigvals!(copy(H)::UpperHessenberg) # test fallback
+            @test λ ≈ λ2
+        end
+    end
+end
+
 end # module TestHessenberg
