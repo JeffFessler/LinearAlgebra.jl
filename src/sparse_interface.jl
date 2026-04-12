@@ -23,7 +23,7 @@ nzrows(A::AbstractVector, col) = col == 1 ? nonzeroinds(A) : throw(BoundsError(A
 Return an iterable collection of the column indices of the nonzero entries in row `row` of the matrix `A`. The indices must be sorted.
 """
 function nzcols(A, row)
-    checkbounds(A, axes(A,2), row)
+    checkbounds(A, row, axes(A,2))
     axes(A, 2)
 end
 
