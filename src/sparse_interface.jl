@@ -8,7 +8,8 @@ nonzeroinds(v::AbstractVector) = eachindex(v)
 """
     nzrows(A, col::Integer)
 
-Return an iterable collection of the row indices of the nonzero entries in column `col` of the matrix `A`. The indices must be sorted.
+Return an iterable collection of the row indices of the nonzero entries in column `col` of the matrix `A`.
+The returned indices should be sorted.
 """
 function nzrows(A, col)
     checkbounds(A, axes(A,1), col)
@@ -20,7 +21,8 @@ nzrows(A::AbstractVector, col) = col == 1 ? nonzeroinds(A) : throw(BoundsError(A
 """
     nzcols(A, row::Integer)
 
-Return an iterable collection of the column indices of the nonzero entries in row `row` of the matrix `A`. The indices must be sorted.
+Return an iterable collection of the column indices of the nonzero entries in row `row` of the matrix `A`.
+The returned indices should be sorted.
 """
 function nzcols(A, row)
     checkbounds(A, row, axes(A,2))
