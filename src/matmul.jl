@@ -611,14 +611,14 @@ function generic_syrk!(C::StridedMatrix{T}, A::StridedVecOrMat{T}, conjugate::Bo
             for k ∈ 1:n, j ∈ 1:m
                 αA_jk = A[j, k] * α
                 for i ∈ 1:j
-                    C[i, j] += A[i, k] * αA_jk
+                    C[i, j] = muladd(A[i, k], αA_jk, C[i, j])
                 end
             end
         else
             for j ∈ 1:n, i ∈ 1:j
                 temp = A[1, i] * A[1, j]
                 for k ∈ 2:m
-                    temp += A[k, i] * A[k, j]
+                    temp = muladd(A[k, i], A[k, j], temp)
                 end
                 C[i, j] += temp * α
             end
@@ -628,7 +628,7 @@ function generic_syrk!(C::StridedMatrix{T}, A::StridedVecOrMat{T}, conjugate::Bo
             for k ∈ 1:n, j ∈ 1:m
                 αA_jk_bar = conj(A[j, k]) * α
                 for i ∈ 1:j-1
-                    C[i, j] += A[i, k] * αA_jk_bar
+                    C[i, j] = muladd(A[i, k], αA_jk_bar, C[i, j])
                 end
                 C[j, j] += abs2(A[j, k]) * α
             end
@@ -637,7 +637,7 @@ function generic_syrk!(C::StridedMatrix{T}, A::StridedVecOrMat{T}, conjugate::Bo
                 for i ∈ 1:j-1
                     temp = conj(A[1, i]) * A[1, j]
                     for k ∈ 2:m
-                        temp += conj(A[k, i]) * A[k, j]
+                        temp = muladd(conj(A[k, i]), A[k, j], temp)
                     end
                     C[i, j] += temp * α
                 end
@@ -1176,9 +1176,6 @@ function _generic_matmatmul_generic!(C, A, B, alpha, beta)
 end
 
 # multiply 2x2 matrices
-function matmul2x2(tA, tB, A::AbstractMatrix{T}, B::AbstractMatrix{S}) where {T,S}
-    matmul2x2!(similar(B, promote_op(matprod, T, S), 2, 2), tA, tB, A, B)
-end
 
 function __matmul_checks(C, A, B, sz)
     require_one_based_indexing(C, A, B)
@@ -1251,9 +1248,6 @@ function matmul2x2!(C::AbstractMatrix, tA, tB, A::AbstractMatrix, B::AbstractMat
 end
 
 # Multiply 3x3 matrices
-function matmul3x3(tA, tB, A::AbstractMatrix{T}, B::AbstractMatrix{S}) where {T,S}
-    matmul3x3!(similar(B, promote_op(matprod, T, S), 3, 3), tA, tB, A, B)
-end
 
 # separate function with the core of matmul3x3! that doesn't depend on a MulAddMul
 function _matmul3x3_elements(C::AbstractMatrix, tA, tB, A::AbstractMatrix, B::AbstractMatrix)
@@ -1390,6 +1384,10 @@ end
 
 mat_vec_scalar(A, x, γ) = A * (x * γ)  # fallback
 mat_vec_scalar(A::StridedMaybeAdjOrTransMat, x::StridedVector, γ) = _mat_vec_scalar(A, x, γ)
+mat_vec_scalar(A::StridedMatrix{Complex{T}}, x::StridedVector{T}, γ) where {T<:BlasReal} =
+    (A * x) * γ
+mat_vec_scalar(A::StridedMatrix{Complex{T}}, x::StridedVector{T}, γ::Real) where {T<:BlasReal} =
+    _mat_vec_scalar(A, x, γ)
 mat_vec_scalar(A::AdjOrTransAbsVec, x::StridedVector, γ) = (A * x) * γ
 
 function _mat_vec_scalar(A, x, γ)
@@ -1400,6 +1398,10 @@ end
 
 mat_mat_scalar(A, B, γ) = (A*B) * γ # fallback
 mat_mat_scalar(A::StridedMaybeAdjOrTransMat, B::StridedMaybeAdjOrTransMat, γ) =
+    _mat_mat_scalar(A, B, γ)
+mat_mat_scalar(A::StridedMatrix{Complex{T}}, B::StridedMaybeAdjOrTransMat{T}, γ) where {T<:BlasReal} =
+    (A*B) * γ
+mat_mat_scalar(A::StridedMatrix{Complex{T}}, B::StridedMaybeAdjOrTransMat{T}, γ::Real) where {T<:BlasReal} =
     _mat_mat_scalar(A, B, γ)
 
 function _mat_mat_scalar(A, B, γ)

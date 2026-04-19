@@ -766,9 +766,6 @@ end
     @test LinearAlgebra.gemm_wrapper('N', 'N', I10x10, I10x10) == I10x10
     @test_throws DimensionMismatch LinearAlgebra.gemm_wrapper!(I10x10, 'N', 'N', I10x11, I10x10)
     @test_throws DimensionMismatch LinearAlgebra.gemm_wrapper!(I10x10, 'N', 'N', I0x0, I0x0)
-
-    A = rand(elty, 3, 3)
-    @test LinearAlgebra.matmul3x3('T', 'N', A, Matrix{elty}(I, 3, 3)) == transpose(A)
 end
 
 @testset "#13593, #13488" begin
@@ -1106,6 +1103,15 @@ end
     @test M44 * M44 * M44 ≈ (M44 * M44) * M44 ≈ M44 * (M44 * M44)
     @test M42 * M24 * M44 ≈ (M42 * M24) * M44 ≈ M42 * (M24 * M44)
     @test M44 * M42 * M24 ≈ (M44 * M42) * M24 ≈ M44 * (M42 * M24)
+end
+
+@testset "3-arg *, RealOrComplex * Matrix{Complex} * Matrix{Real}" begin
+    a = 0.5 + 2.5im
+    A = randn(ComplexF64, 5, 5)
+    B = randn(Float64, 5, 5)
+    b = randn(Float64, 5)
+    @test a*A*B ≈ real(a)*A*B + im*(imag(a)*A*B) ≈ A * (a*B)
+    @test a*A*b ≈ real(a)*A*b + im*(imag(a)*A*b) ≈ A * (a*b)
 end
 
 @testset "4-arg *, by type" begin

@@ -6082,7 +6082,7 @@ for (orghr, elty) in
             require_one_based_indexing(A, tau)
             chkstride1(A, tau)
             n = checksquare(A)
-            if n - length(tau) != 1
+            if !iszero(n) && (n - length(tau) != 1)
                 throw(DimensionMismatch(lazy"tau has length $(length(tau)), needs $(n - 1)"))
             end
             work = Vector{$elty}(undef, 1)
@@ -6339,7 +6339,7 @@ for (orgtr, elty) in
             require_one_based_indexing(A, tau)
             chkstride1(A, tau)
             n = checksquare(A)
-            if n - length(tau) != 1
+            if !iszero(n) && (n - length(tau) != 1)
                 throw(DimensionMismatch(lazy"tau has length $(length(tau)), needs $(n - 1)"))
             end
             chkuplo(uplo)
@@ -6396,7 +6396,7 @@ for (ormtr, elty) in
             chktrans(trans)
             mC, nC = size(C, 1), size(C, 2)
 
-            if n - length(tau) != 1
+            if !iszero(n) && (n - length(tau) != 1)
                 throw(DimensionMismatch(lazy"tau has length $(length(tau)), needs $(n - 1)"))
             end
             if (side == 'L' && mC != n) || (side == 'R' && nC != n)
@@ -7179,19 +7179,27 @@ for (fn, elty) in ((:dlacpy_, :Float64),
             chkstride1(A, B)
             m, n = size(A)
             m1, n1 = size(B)
+            minmn = min(m, n)
             if uplo == 'U'
-                lacpy_size_check((m1, n1), (n < m ? n : m, n))
+                lacpy_size_check((m1, n1), (minmn, n))
             elseif uplo == 'L'
-                lacpy_size_check((m1, n1), (m, m < n ? m : n))
+                lacpy_size_check((m1, n1), (m, minmn))
             else
                 lacpy_size_check((m1, n1), (m, n))
             end
             lda = max(1, stride(A, 2))
             ldb = max(1, stride(B, 2))
-            ccall((@blasfunc($fn), libblastrampoline), Cvoid,
-                 (Ref{UInt8}, Ref{BlasInt}, Ref{BlasInt}, Ptr{$elty},
-                  Ref{BlasInt}, Ptr{$elty}, Ref{BlasInt}, Clong),
-                  uplo, m, n, A, lda, B, ldb, 1)
+            if uplo == 'L' # handles https://github.com/Reference-LAPACK/lapack/issues/1183
+                ccall((@blasfunc($fn), libblastrampoline), Cvoid,
+                    (Ref{UInt8}, Ref{BlasInt}, Ref{BlasInt}, Ptr{$elty},
+                    Ref{BlasInt}, Ptr{$elty}, Ref{BlasInt}, Clong),
+                    uplo, m, minmn, A, lda, B, ldb, 1)
+            else
+                ccall((@blasfunc($fn), libblastrampoline), Cvoid,
+                    (Ref{UInt8}, Ref{BlasInt}, Ref{BlasInt}, Ptr{$elty},
+                    Ref{BlasInt}, Ptr{$elty}, Ref{BlasInt}, Clong),
+                    uplo, m, n, A, lda, B, ldb, 1)
+            end
             B
         end
     end
