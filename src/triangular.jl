@@ -1976,7 +1976,7 @@ for mat in (:AbstractVector, :AbstractMatrix)
         require_one_based_indexing(B)
         TAB = promote_op(matprod, eltype(A), eltype(B))
         if TAB <: BlasFloat
-            lmul!(convert(AbstractArray{TAB}, A), copy_similar(B, TAB))
+            lmul!(convert(AbstractArray{TAB}, A), copyto!(matprod_dest(A, B, TAB), B))
         else
             mul!(matprod_dest(A, B, TAB), A, B)
         end
@@ -2026,7 +2026,7 @@ function mul(A::AbstractMatrix, B::UpperOrLowerTriangular)
     require_one_based_indexing(A)
     TAB = promote_op(matprod, eltype(A), eltype(B))
     if TAB <: BlasFloat
-        rmul!(copy_similar(A, TAB), convert(AbstractArray{TAB}, B))
+        rmul!(copyto!(matprod_dest(A, B, TAB), A), convert(AbstractArray{TAB}, B))
     else
         mul!(matprod_dest(A, B, TAB), A, B)
     end
