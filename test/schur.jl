@@ -43,8 +43,10 @@ aimg  = randn(n,n)/2
         @test vecs*sch*vecs' ≈ UnitUpperTriangular(triu(a))
         sch, vecs, vals = schur(LowerTriangular(tril(a)))
         @test vecs*sch*vecs' ≈ tril(a)
+        @test vals ≈ diag(sch)  # eigenvalues should match diag of Schur factor
         sch, vecs, vals = schur(UnitLowerTriangular(tril(a)))
         @test vecs*sch*vecs' ≈ UnitLowerTriangular(tril(a))
+        @test vals ≈ diag(sch)  # eigenvalues should match diag of Schur factor
         sch, vecs, vals = schur(Hermitian(asym))
         @test vecs*sch*vecs' ≈ asym
         sch, vecs, vals = schur(Symmetric(a + transpose(a)))
