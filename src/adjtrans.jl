@@ -515,7 +515,7 @@ end
 
 ## pseudoinversion
 pinv(v::AdjointAbsVec, tol::Real = 0) = pinv(v.parent, tol).parent
-pinv(v::TransposeAbsVec, tol::Real = 0) = pinv(conj(v.parent)).parent
+pinv(v::TransposeAbsVec, tol::Real = 0) = pinv(conj(v.parent), tol).parent
 
 
 ## left-division \
