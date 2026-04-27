@@ -561,6 +561,4 @@ end
     end
 end
 
-
-
 end # module TestQR
