@@ -290,7 +290,7 @@ function _opnorm1Inf(B::Bidiagonal, p)
     case = xor(p == 1, istriu(B))
     normd1, normdend = norm(first(B.dv)), norm(last(B.dv))
     normd1, normdend = case ? (zero(normd1), normdend) : (normd1, zero(normdend))
-    return max(mapreduce(t -> sum(norm, t), max, zip(view(B.dv, (1:length(B.ev)) .+ !case), B.ev)), normdend)
+    return max(mapreduce(t -> sum(norm, t), max, zip(view(B.dv, (1:length(B.ev)) .+ !case), B.ev)), normd1, normdend)
 end
 
 ####################
