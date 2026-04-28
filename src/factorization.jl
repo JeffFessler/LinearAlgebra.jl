@@ -35,7 +35,7 @@ struct TransposeFactorization{T,S<:Factorization} <: Factorization{T}
     parent::S
 end
 TransposeFactorization(F::Factorization) =
-    TransposeFactorization{Base.promote_op(adjoint,eltype(F)),typeof(F)}(F)
+    TransposeFactorization{Base.promote_op(transpose,eltype(F)),typeof(F)}(F)
 
 eltype(::Type{<:Factorization{T}}) where {T} = T
 size(F::AdjointFactorization) = reverse(size(parent(F)))
@@ -110,7 +110,7 @@ Factorization{T}(A::AdjointFactorization) where {T} =
     adjoint(Factorization{T}(parent(A)))
 Factorization{T}(A::TransposeFactorization) where {T} =
     transpose(Factorization{T}(parent(A)))
-inv(F::Factorization{T}) where {T} = (n = size(F, 1); ldiv!(F, Matrix{T}(I, n, n)))
+inv(F::Factorization{T}) where {T} = (n = checksquare(F); ldiv!(F, Matrix{T}(I, n, n)))
 
 Base.hash(F::Factorization, h::UInt) = mapreduce(f -> hash(getfield(F, f)), hash, 1:nfields(F); init=h)
 Base.:(==)(  F::T, G::T) where {T<:Factorization} = all(f -> getfield(F, f) == getfield(G, f), 1:nfields(F))

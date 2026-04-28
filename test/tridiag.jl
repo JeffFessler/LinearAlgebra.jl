@@ -6,25 +6,16 @@ isdefined(Main, :pruned_old_LA) || @eval Main include("prune_old_LA.jl")
 
 using Test, LinearAlgebra, Random
 
-const BASE_TEST_PATH = joinpath(Sys.BINDIR, "..", "share", "julia", "test")
+const TESTDIR = joinpath(dirname(pathof(LinearAlgebra)), "..", "test")
+const TESTHELPERS = joinpath(TESTDIR, "testhelpers", "testhelpers.jl")
+isdefined(Main, :LinearAlgebraTestHelpers) || Base.include(Main, TESTHELPERS)
 
-isdefined(Main, :Quaternions) || @eval Main include(joinpath($(BASE_TEST_PATH), "testhelpers", "Quaternions.jl"))
-using .Main.Quaternions
-
-isdefined(Main, :InfiniteArrays) || @eval Main include(joinpath($(BASE_TEST_PATH), "testhelpers", "InfiniteArrays.jl"))
-using .Main.InfiniteArrays
-
-isdefined(Main, :FillArrays) || @eval Main include(joinpath($(BASE_TEST_PATH), "testhelpers", "FillArrays.jl"))
-using .Main.FillArrays
-
-isdefined(Main, :OffsetArrays) || @eval Main include(joinpath($(BASE_TEST_PATH), "testhelpers", "OffsetArrays.jl"))
-using .Main.OffsetArrays
-
-isdefined(Main, :SizedArrays) || @eval Main include(joinpath($(BASE_TEST_PATH), "testhelpers", "SizedArrays.jl"))
-using .Main.SizedArrays
-
-isdefined(Main, :ImmutableArrays) || @eval Main include(joinpath($(BASE_TEST_PATH), "testhelpers", "ImmutableArrays.jl"))
-using .Main.ImmutableArrays
+using Main.LinearAlgebraTestHelpers.Quaternions
+using Main.LinearAlgebraTestHelpers.InfiniteArrays
+using Main.LinearAlgebraTestHelpers.FillArrays
+using Main.LinearAlgebraTestHelpers.OffsetArrays
+using Main.LinearAlgebraTestHelpers.SizedArrays
+using Main.LinearAlgebraTestHelpers.ImmutableArrays
 
 include("testutils.jl") # test_approx_eq_modphase
 
@@ -70,6 +61,7 @@ end
             c += im*convert(Vector{elty}, randn(n - 1))
         end
     end
+    @test_throws DimensionMismatch SymTridiagonal(d, d)
     @test_throws DimensionMismatch SymTridiagonal(dl, fill(elty(1), n+1))
     @test_throws ArgumentError SymTridiagonal(rand(n, n))
     @test_throws ArgumentError Tridiagonal(dl, dl, dl)
@@ -199,19 +191,6 @@ end
         @test !isdiag(Tridiagonal(dl,d,zerosdu))
         @test !isdiag(Tridiagonal(zerosdl,d,du))
         @test !isdiag(Tridiagonal(dl,d,du))
-
-        # Test methods that could fail due to dv and ev having the same length
-        # see #41089
-
-        badev = zero(d)
-        badev[end] = 1
-        S = SymTridiagonal(d, badev)
-
-        @test istriu(S, -2)
-        @test istriu(S, 0)
-        @test !istriu(S, 2)
-
-        @test isdiag(S)
     end
 
     @testset "iszero and isone" begin
@@ -238,12 +217,6 @@ end
         @test isone(Sone)
         @test !iszero(Smix)
         @test !isone(Smix)
-
-        badev = zeros(elty, 3)
-        badev[end] = 1
-
-        @test isone(SymTridiagonal(ones(elty, 3), badev))
-        @test iszero(SymTridiagonal(zeros(elty, 3), badev))
     end
 
     @testset for mat_type in (Tridiagonal, SymTridiagonal)
@@ -556,8 +529,24 @@ end
     @test Tridiagonal([1, 2], [4, 5, 1], [6.0, 7]) == [4.0 6.0 0.0; 1.0 5.0 7.0; 0.0 2.0 1.0]
 end
 
+@testset "SymTridiagonal dv and ev lengths" begin
+    # https://github.com/JuliaLang/LinearAlgebra.jl/issues/629
+
+    # Empty matrix can have length(dv) == length(ev)
+    @test SymTridiagonal(Float64[], Float64[]) isa SymTridiagonal
+
+    @test SymTridiagonal(ones(1), Float64[]) isa SymTridiagonal
+
+    # Must have length(dv) = length(ev) + 1
+    @test_throws DimensionMismatch SymTridiagonal(ones(1), ones(1))
+    @test_throws DimensionMismatch SymTridiagonal(ones(2), ones(2))
+    @test_throws DimensionMismatch SymTridiagonal(ones(4), ones(2))
+    @test_throws DimensionMismatch SymTridiagonal(ones(4), ones(5))
+end
+
 @testset "convert for SymTridiagonal" begin
     STF32 = SymTridiagonal{Float32}(fill(1f0, 5), fill(1f0, 4))
+    @test convert(typeof(STF32), STF32) === STF32
     @test convert(SymTridiagonal{Float64}, STF32)::SymTridiagonal{Float64} == STF32
     @test convert(AbstractMatrix{Float64}, STF32)::SymTridiagonal{Float64} == STF32
 end
@@ -581,7 +570,7 @@ end
 end
 
 @testset "Issue #26994 (and the empty case)" begin
-    T = SymTridiagonal([1.0],[3.0])
+    T = SymTridiagonal([1.0],Float64[])
     x = ones(1)
     @test T*x == ones(1)
     @test SymTridiagonal(ones(0), ones(0)) * ones(0, 2) == ones(0, 2)
@@ -702,19 +691,6 @@ end
     @test_throws ArgumentError SymTridiagonal{Float32}(T)
 end
 
-# Issue #38765
-@testset "Eigendecomposition with different lengths" begin
-    # length(A.ev) can be either length(A.dv) or length(A.dv) - 1
-    A = SymTridiagonal(fill(1.0, 3), fill(-1.0, 3))
-    F = eigen(A)
-    A2 = SymTridiagonal(fill(1.0, 3), fill(-1.0, 2))
-    F2 = eigen(A2)
-    test_approx_eq_modphase(F.vectors, F2.vectors)
-    @test F.values ≈ F2.values ≈ eigvals(A) ≈ eigvals(A2)
-    @test eigvecs(A) ≈ eigvecs(A2)
-    @test eigvecs(A, eigvals(A)[1:1]) ≈ eigvecs(A2, eigvals(A2)[1:1])
-end
-
 @testset "non-commutative algebra (#39701)" begin
     for A in (SymTridiagonal(Quaternion.(randn(5), randn(5), randn(5), randn(5)), Quaternion.(randn(4), randn(4), randn(4), randn(4))),
               Tridiagonal(Quaternion.(randn(4), randn(4), randn(4), randn(4)), Quaternion.(randn(5), randn(5), randn(5), randn(5)), Quaternion.(randn(4), randn(4), randn(4), randn(4))))
@@ -754,8 +730,7 @@ end
 
     # complex
     # https://github.com/JuliaLang/julia/pull/41037#discussion_r645524081
-    S = SymTridiagonal(randn(5) .+ 0im, randn(5) .+ 0im)
-    S.ev[end] = im
+    S = SymTridiagonal(randn(5) .+ 0im, randn(4) .+ 0im)
     @test issymmetric(S)
     @test ishermitian(S)
 
@@ -799,7 +774,7 @@ end
 @testset "non-number eltype" begin
     @testset "sum for SymTridiagonal" begin
         dv = [SizedArray{(2,2)}(rand(1:2048,2,2)) for i in 1:10]
-        ev = [SizedArray{(2,2)}(rand(1:2048,2,2)) for i in 1:10]
+        ev = [SizedArray{(2,2)}(rand(1:2048,2,2)) for i in 1:9]
         S = SymTridiagonal(dv, ev)
         Sdense = Matrix(S)
         @test Sdense == collect(S)
@@ -818,7 +793,7 @@ end
     end
     @testset "== between Tridiagonal and SymTridiagonal" begin
         dv = [SizedArray{(2,2)}([1 2;3 4]) for i in 1:4]
-        ev = [SizedArray{(2,2)}([3 4;1 2]) for i in 1:4]
+        ev = [SizedArray{(2,2)}([3 4;1 2]) for i in 1:3]
         S = SymTridiagonal(dv, ev)
         Sdense = Matrix(S)
         @test S == Tridiagonal(diag(Sdense, -1), diag(Sdense),  diag(Sdense, 1)) == S
@@ -830,12 +805,6 @@ end
     ev, dv = [1:4;], [1:5;]
     S = SymTridiagonal(dv, ev)
     T = Tridiagonal(zero(ev), zero(dv), zero(ev))
-    @test copyto!(T, S) == S
-    @test copyto!(zero(S), T) == T
-
-    ev2 = [1:5;]
-    S = SymTridiagonal(dv, ev2)
-    T = Tridiagonal(zeros(length(ev2)-1), zero(dv), zeros(length(ev2)-1))
     @test copyto!(T, S) == S
     @test copyto!(zero(S), T) == T
 
@@ -1076,27 +1045,17 @@ end
 end
 
 @testset "opnorms" begin
-    T = Tridiagonal([1,2,3], [1,-2,3,-4], [1,2,3])
-
-    @test opnorm(T, 1) == opnorm(Matrix(T), 1)
-    @test_skip opnorm(T, 2) ≈ opnorm(Matrix(T), 2) # currently missing
-    @test opnorm(T, Inf) == opnorm(Matrix(T), Inf)
-
-    S = SymTridiagonal([1,-2,3,-4], [1,2,3])
-
-    @test opnorm(S, 1) == opnorm(Matrix(S), 1)
-    @test_skip opnorm(S, 2) ≈ opnorm(Matrix(S), 2) # currently missing
-    @test opnorm(S, Inf) == opnorm(Matrix(S), Inf)
-
-    T = Tridiagonal(Int[], [-5], Int[])
-    @test opnorm(T, 1) == opnorm(Matrix(T), 1)
-    @test_skip opnorm(T, 2) ≈ opnorm(Matrix(T), 2) # currently missing
-    @test opnorm(T, Inf) == opnorm(Matrix(T), Inf)
-
-    S = SymTridiagonal(T)
-    @test opnorm(S, 1) == opnorm(Matrix(S), 1)
-    @test_skip opnorm(S, 2) ≈ opnorm(Matrix(S), 2) # currently missing
-    @test opnorm(S, Inf) == opnorm(Matrix(S), Inf)
+    for T in (Tridiagonal([1,2,3], [1,-2,3,-4], [1,2,3]),
+                SymTridiagonal([1,-2,3,-4], [1,2,3]),
+                Tridiagonal(Int[], [-5], Int[]),
+                SymTridiagonal([-5], Int[]),
+                Tridiagonal([1], [1,-2], [3]),
+                SymTridiagonal([1,-2], [3])
+             )
+        @test opnorm(T, 1) == opnorm(Matrix(T), 1)
+        @test_skip opnorm(T, 2) ≈ opnorm(Matrix(T), 2) # currently missing
+        @test opnorm(T, Inf) == opnorm(Matrix(T), Inf)
+    end
 end
 
 @testset "block-bidiagonal matrix indexing" begin
@@ -1160,6 +1119,16 @@ end
         @test_throws InexactError convert(SymTridiagonal, fill(5, 4, 4))
         @test_throws InexactError convert(SymTridiagonal, diagm(0=>fill(NaN,4)))
     end
+    @testset "convert from same type" begin
+        T = Tridiagonal(1:3, 1:4, 1:3)
+        @test convert(Tridiagonal, T) === T
+        @test convert(Tridiagonal{eltype(T)}, T) === T
+        @test convert(typeof(T), T) === T
+        S = SymTridiagonal(1:4, 1:3)
+        @test convert(SymTridiagonal, S) === S
+        @test convert(SymTridiagonal{eltype(S)}, S) === S
+        @test convert(typeof(S), S) === S
+    end
 end
 
 @testset "isreal" begin
@@ -1205,6 +1174,63 @@ end
     @test_throws "cannot set off-diagonal entry $((1,3))" S[LinearAlgebra.BandIndex(2,1)] = 1
     @test_throws BoundsError S[LinearAlgebra.BandIndex(size(S,1),1)]
     @test_throws BoundsError S[LinearAlgebra.BandIndex(0,size(S,1)+1)]
+end
+
+@testset "fillband!" begin
+    @testset "Tridiagonal" begin
+        T = Tridiagonal(zeros(3), zeros(4), zeros(3))
+        LinearAlgebra.fillband!(T, 2, 1, 1)
+        @test all(==(2), diagview(T,1))
+        @test all(==(0), diagview(T,0))
+        @test all(==(0), diagview(T,-1))
+        LinearAlgebra.fillband!(T, 3, 0, 0)
+        @test all(==(3), diagview(T,0))
+        @test all(==(2), diagview(T,1))
+        @test all(==(0), diagview(T,-1))
+        LinearAlgebra.fillband!(T, 4, -1, 1)
+        @test all(==(4), diagview(T,-1))
+        @test all(==(4), diagview(T,0))
+        @test all(==(4), diagview(T,1))
+        @test_throws ArgumentError LinearAlgebra.fillband!(T, 3, -2, 2)
+
+        LinearAlgebra.fillstored!(T, 1)
+        LinearAlgebra.fillband!(T, 0, -3, 3)
+        @test iszero(T)
+        LinearAlgebra.fillstored!(T, 1)
+        LinearAlgebra.fillband!(T, 0, -10, 10)
+        @test iszero(T)
+
+        LinearAlgebra.fillstored!(T, 1)
+        T2 = copy(T)
+        LinearAlgebra.fillband!(T, 0, -1, -3)
+        @test T == T2
+        LinearAlgebra.fillband!(T, 0, 10, 10)
+        @test T == T2
+    end
+    @testset "SymTridiagonal" begin
+        S = SymTridiagonal(zeros(4), zeros(3))
+        @test_throws ArgumentError LinearAlgebra.fillband!(S, 2, -1, -1)
+        @test_throws ArgumentError LinearAlgebra.fillband!(S, 2, -2, 2)
+
+        LinearAlgebra.fillband!(S, 1, -1, 1)
+        @test all(==(1), diagview(S,-1))
+        @test all(==(1), diagview(S,0))
+        @test all(==(1), diagview(S,1))
+
+        LinearAlgebra.fillstored!(S, 1)
+        LinearAlgebra.fillband!(S, 0, -3, 3)
+        @test iszero(S)
+        LinearAlgebra.fillstored!(S, 1)
+        LinearAlgebra.fillband!(S, 0, -10, 10)
+        @test iszero(S)
+
+        LinearAlgebra.fillstored!(S, 1)
+        S2 = copy(S)
+        LinearAlgebra.fillband!(S, 0, -1, -3)
+        @test S == S2
+        LinearAlgebra.fillband!(S, 0, 10, 10)
+        @test S == S2
+    end
 end
 
 end # module TestTridiagonal

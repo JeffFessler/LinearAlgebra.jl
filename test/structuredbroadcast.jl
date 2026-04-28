@@ -6,9 +6,11 @@ isdefined(Main, :pruned_old_LA) || @eval Main include("prune_old_LA.jl")
 
 using Test, LinearAlgebra
 
-const BASE_TEST_PATH = joinpath(Sys.BINDIR, "..", "share", "julia", "test")
-isdefined(Main, :SizedArrays) || @eval Main include(joinpath($(BASE_TEST_PATH), "testhelpers", "SizedArrays.jl"))
-using .Main.SizedArrays
+const TESTDIR = joinpath(dirname(pathof(LinearAlgebra)), "..", "test")
+const TESTHELPERS = joinpath(TESTDIR, "testhelpers", "testhelpers.jl")
+isdefined(Main, :LinearAlgebraTestHelpers) || Base.include(Main, TESTHELPERS)
+
+using Main.LinearAlgebraTestHelpers.SizedArrays
 
 @testset "broadcast[!] over combinations of scalars, structured matrices, and dense vectors/matrices" begin
     @testset for N in (0,1,2,10) # some edge cases, and a structured case
@@ -22,8 +24,9 @@ using .Main.SizedArrays
         S = SymTridiagonal(rand(N), rand(max(0,N-1)))
         U = UpperTriangular(rand(N,N))
         L = LowerTriangular(rand(N,N))
+        UH = UpperHessenberg(rand(N,N))
         M = Matrix(rand(N,N))
-        structuredarrays = (D, B, T, U, L, M, S)
+        structuredarrays = (D, B, T, U, L, M, S, UH)
         fstructuredarrays = map(Array, structuredarrays)
         @testset "$(nameof(typeof(X)))" for (X, fX) in zip(structuredarrays, fstructuredarrays)
             @test (Q = broadcast(sin, X); typeof(Q) == typeof(X) && Q == broadcast(sin, fX))
@@ -135,6 +138,7 @@ end
         T = Tridiagonal(rand(max(0,N-1)), rand(N), rand(max(0,N-1)))
         ◣ = LowerTriangular(rand(N,N))
         ◥ = UpperTriangular(rand(N,N))
+        UH = UpperHessenberg(rand(N,N))
         M = Matrix(rand(N,N))
 
         @test broadcast!(sin, copy(D), D)::Diagonal == sin.(D)::Diagonal
@@ -143,6 +147,7 @@ end
         @test broadcast!(sin, copy(T), T)::Tridiagonal == sin.(T)::Tridiagonal
         @test broadcast!(sin, copy(◣), ◣)::LowerTriangular == sin.(◣)::LowerTriangular
         @test broadcast!(sin, copy(◥), ◥)::UpperTriangular == sin.(◥)::UpperTriangular
+        @test broadcast!(sin, copy(UH), UH)::UpperHessenberg == sin.(UH)::UpperHessenberg
         @test broadcast!(sin, copy(M), M)::Matrix == sin.(M)::Matrix
         @test broadcast!(*, copy(D), D, A) == Diagonal(broadcast(*, D, A))
         @test broadcast!(*, copy(Bu), Bu, A) == Bidiagonal(broadcast(*, Bu, A), :U)
@@ -150,6 +155,7 @@ end
         @test broadcast!(*, copy(T), T, A) == Tridiagonal(broadcast(*, T, A))
         @test broadcast!(*, copy(◣), ◣, A) == LowerTriangular(broadcast(*, ◣, A))
         @test broadcast!(*, copy(◥), ◥, A) == UpperTriangular(broadcast(*, ◥, A))
+        @test broadcast!(*, copy(UH), UH, A) == UpperHessenberg(broadcast(*, UH, A))
         @test broadcast!(*, copy(M), M, A) == Matrix(broadcast(*, M, A))
 
         if N > 2
@@ -181,8 +187,9 @@ end
     S = SymTridiagonal(rand(N), rand(N - 1))
     U = UpperTriangular(rand(N,N))
     L = LowerTriangular(rand(N,N))
+    UH = UpperHessenberg(rand(N,N))
     M = Matrix(rand(N,N))
-    structuredarrays = (M, D, B, T, S, U, L)
+    structuredarrays = (M, D, B, T, S, U, L, UH)
     fstructuredarrays = map(Array, structuredarrays)
     for (X, fX) in zip(structuredarrays, fstructuredarrays)
         @test (Q = map(sin, X); typeof(Q) == typeof(X) && Q == map(sin, fX))
@@ -394,6 +401,28 @@ end
         M = Matrix(L)
         @test L .+ L .+ 0 .+ L .+ 0 .- L == 2M
     end
+end
+
+@testset "Rectangular UpperHessenberg" begin
+    UH = UpperHessenberg(ones(4,3))
+    UH2 = UH .+ UH .- UH
+    @test UH2 == UH
+    @test UH2 isa UpperHessenberg
+end
+
+@testset "forwarding broadcast to the diag for a Diagonal" begin
+    D = Diagonal(1:4)
+    D2 = D .* 2
+    @test D2 isa Diagonal{Int, <:AbstractRange{Int}}
+
+    # test for wrappers that opt into Diagonal-like broadcasting
+    U = UpperTriangular(D)
+    bc = Broadcast.broadcasted(+, D, U)
+    bcD = Broadcast.broadcasted(+, D, D)
+    S = typeof(Broadcast.BroadcastStyle(typeof(bcD)))
+    bc2 = convert(Broadcast.Broadcasted{S}, bc)
+    @test copy(bc2) == copy(bc) == copy(bcD)
+    @test copy(bc2) isa Diagonal
 end
 
 end
