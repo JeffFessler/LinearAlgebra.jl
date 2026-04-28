@@ -404,7 +404,7 @@ function dot(x::AbstractVector, H::UpperHessenberg, y::AbstractVector)
     m = size(H, 1)
     (length(x) == m == length(y)) || throw(DimensionMismatch())
     if iszero(m)
-        return dot(zero(eltype(x)), zero(eltype(H)), zero(eltype(y)))
+        return zero(dot(zero(eltype(x)), zero(eltype(H)), zero(eltype(y))))
     end
     x₁ = x[1]
     r = dot(x₁, H[1,1], y[1])
@@ -429,6 +429,33 @@ function dot(x::AbstractVector, H::UpperHessenberg, y::AbstractVector)
     end
     return r
 end
+
+# faster eigenvalues, since we can skip the intermediate step of Hessenberg factorization.
+# note: permute==true is ignored, since that could spoil the upper-Hessenberg structure
+function eigvals!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasComplex}
+    LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1))
+    return sorteig!(LAPACK.hseqr!('E', 'N', 1, size(H,1), H.data, H.data)[3], sortby)
+end
+function eigvals!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasReal}
+    LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1))
+    _, _, vals = LAPACK.hseqr!('E', 'N', 1, size(H,1), H.data, H.data)
+    return sorteig!(isreal(vals) ? real(vals) : vals, sortby)
+end
+
+# to do: faster eigen!(::UpperHessenberg)
+
+# preserve the wrapper for eigensolves with UpperHessenberg
+eigencopy_oftype(H::UpperHessenberg, S) = UpperHessenberg(eigencopy_oftype(H.data, S))
+
+# fallback to dense algorithms
+eigvals!(H::UpperHessenberg; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) =
+    eigvals!(triu!(H.data,-1); permute, scale, sortby)
+eigen!(H::UpperHessenberg; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) =
+    eigen!(triu!(H.data,-1); permute, scale, sortby)
+
+
+schur!(H::UpperHessenberg{T}) where {T<:BlasFloat} = Schur(LinearAlgebra.LAPACK.hseqr!(H.data)...)
+schur!(H::UpperHessenberg) = schur!(triu!(H.data, -1)) # fallback to dense algorithm
 
 ######################################################################################
 # Hessenberg factorizations Q(H+μI)Q' of A+μI:

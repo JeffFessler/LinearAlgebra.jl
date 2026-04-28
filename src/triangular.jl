@@ -898,7 +898,7 @@ function dot(x::AbstractVector, A::UpperTriangular, y::AbstractVector)
     m = size(A, 1)
     (length(x) == m == length(y)) || throw(DimensionMismatch())
     if iszero(m)
-        return dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y)))
+        return zero(dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y))))
     end
     x₁ = x[1]
     r = dot(x₁, A[1,1], y[1])
@@ -919,7 +919,7 @@ function dot(x::AbstractVector, A::UnitUpperTriangular, y::AbstractVector)
     m = size(A, 1)
     (length(x) == m == length(y)) || throw(DimensionMismatch())
     if iszero(m)
-        return dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y)))
+        return zero(dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y))))
     end
     x₁ = first(x)
     r = dot(x₁, y[1])
@@ -941,7 +941,7 @@ function dot(x::AbstractVector, A::LowerTriangular, y::AbstractVector)
     m = size(A, 1)
     (length(x) == m == length(y)) || throw(DimensionMismatch())
     if iszero(m)
-        return dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y)))
+        return zero(dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y))))
     end
     r = zero(typeof(dot(first(x), first(A), first(y))))
     @inbounds for j in axes(A, 2)
@@ -961,7 +961,7 @@ function dot(x::AbstractVector, A::UnitLowerTriangular, y::AbstractVector)
     m = size(A, 1)
     (length(x) == m == length(y)) || throw(DimensionMismatch())
     if iszero(m)
-        return dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y)))
+        return zero(dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y))))
     end
     r = zero(typeof(dot(first(x), first(y))))
     @inbounds for j in axes(A, 2)
@@ -1977,34 +1977,71 @@ _inner_type_promotion(op, ::Type{TA}, ::Type{TB}) where {TA,TB} =
     promote_op(op, TA, TB)
 ## The general promotion methods
 for mat in (:AbstractVector, :AbstractMatrix)
+    @eval function mul(A::UpperOrLowerTriangular, B::$mat)
+        require_one_based_indexing(B)
+        TAB = promote_op(matprod, eltype(A), eltype(B))
+        if TAB <: BlasFloat
+            lmul!(convert(AbstractArray{TAB}, A), copy_similar(B, TAB))
+        else
+            mul!(matprod_dest(A, B, TAB), A, B)
+        end
+    end
     ### Left division with triangle to the left hence rhs cannot be transposed. No quotients.
     @eval function \(A::Union{UnitUpperTriangular,UnitLowerTriangular}, B::$mat)
         require_one_based_indexing(B)
         TAB = _inner_type_promotion(\, eltype(A), eltype(B))
-        ldiv!(similar(B, TAB, size(B)), A, B)
+        if TAB <: BlasFloat
+            ldiv!(convert(AbstractArray{TAB}, A), copy_similar(B, TAB))
+        else
+            ldiv!(similar(B, TAB, size(B)), A, B)
+        end
     end
     ### Left division with triangle to the left hence rhs cannot be transposed. Quotients.
     @eval function \(A::Union{UpperTriangular,LowerTriangular}, B::$mat)
         require_one_based_indexing(B)
         TAB = promote_op(\, eltype(A), eltype(B))
-        ldiv!(similar(B, TAB, size(B)), A, B)
+        if TAB <: BlasFloat
+            ldiv!(convert(AbstractArray{TAB}, A), copy_similar(B, TAB))
+        else
+            ldiv!(similar(B, TAB, size(B)), A, B)
+        end
     end
     ### Right division with triangle to the right hence lhs cannot be transposed. No quotients.
     @eval function /(A::$mat, B::Union{UnitUpperTriangular, UnitLowerTriangular})
         require_one_based_indexing(A)
         TAB = _inner_type_promotion(/, eltype(A), eltype(B))
-        _rdiv!(similar(A, TAB, size(A)), A, B)
+        if TAB <: BlasFloat
+            rdiv!(copy_similar(A, TAB), convert(AbstractArray{TAB}, B))
+        else
+            _rdiv!(similar(A, TAB, size(A)), A, B)
+        end
     end
     ### Right division with triangle to the right hence lhs cannot be transposed. Quotients.
     @eval function /(A::$mat, B::Union{UpperTriangular,LowerTriangular})
         require_one_based_indexing(A)
         TAB = promote_op(/, eltype(A), eltype(B))
-        _rdiv!(similar(A, TAB, size(A)), A, B)
+        if TAB <: BlasFloat
+            rdiv!(copy_similar(A, TAB), convert(AbstractArray{TAB}, B))
+        else
+            _rdiv!(similar(A, TAB, size(A)), A, B)
+        end
+    end
+end
+function mul(A::AbstractMatrix, B::UpperOrLowerTriangular)
+    require_one_based_indexing(A)
+    TAB = promote_op(matprod, eltype(A), eltype(B))
+    if TAB <: BlasFloat
+        rmul!(copy_similar(A, TAB), convert(AbstractArray{TAB}, B))
+    else
+        mul!(matprod_dest(A, B, TAB), A, B)
     end
 end
 
 ## Some Triangular-Triangular cases. We might want to write tailored methods
 ## for these cases, but I'm not sure it is worth it.
+# disambiguation from the above methods
+mul(A::UpperOrLowerTriangular, B::UpperOrLowerTriangular) =
+    @invoke mul(A::typeof(A), B::AbstractMatrix)
 for f in (:mul, :\)
     @eval begin
         ($f)(A::LowerTriangular, B::LowerTriangular) =
@@ -2655,8 +2692,9 @@ end
 
 # End of auxiliary functions for matrix logarithm and matrix power
 
-sqrt(A::UpperTriangular) = sqrt_quasitriu(A)
-function sqrt(A::UnitUpperTriangular{T}) where T
+sqrt(A::UpperTriangular; check::Bool=true) = sqrt_quasitriu(A, diagview(A); check) # matrix is upper triangular, so eigenvalues are just the diagonals
+# shouldn't need to do a check for UnitUpperTriangular because the eigenvalues are all 1, flag included so the function call lines up
+function sqrt(A::UnitUpperTriangular{T}; check=true) where T 
     B = A.data
     t = typeof(sqrt(zero(T)))
     R = Matrix{t}(I, size(A))
@@ -2673,14 +2711,16 @@ function sqrt(A::UnitUpperTriangular{T}) where T
     end
     return UnitUpperTriangular(R)
 end
-sqrt(A::LowerTriangular) = copy(transpose(sqrt(copy(transpose(A)))))
-sqrt(A::UnitLowerTriangular) = copy(transpose(sqrt(copy(transpose(A)))))
+sqrt(A::LowerTriangular; check::Bool=true) = copy(transpose(sqrt(copy(transpose(A)); check)))
+sqrt(A::UnitLowerTriangular; check::Bool=true) = copy(transpose(sqrt(copy(transpose(A)); check)))
 
 # Auxiliary functions for matrix square root
 
 # square root of upper triangular or real upper quasitriangular matrix
-function sqrt_quasitriu(A0; blockwidth = eltype(A0) <: Complex ? 512 : 256)
+# A0 is triangular or quasitriangular matrix, evals is the eigenvalues
+function sqrt_quasitriu(A0, evals::AbstractVector; blockwidth = eltype(A0) <: Complex ? 512 : 256, check::Bool=true)
     n = checksquare(A0)
+    
     T = eltype(A0)
     Tr = typeof(sqrt(real(zero(T))))
     Tc = typeof(sqrt(complex(zero(T))))
@@ -2707,6 +2747,19 @@ function sqrt_quasitriu(A0; blockwidth = eltype(A0) <: Complex ? 512 : 256)
         R = zeros(Tc, size(A0))
     end
     _sqrt_quasitriu!(R, A; blockwidth=blockwidth, n=n)
+
+    # check that the algorithm worked
+    if check
+        atol = eps(generic_normInf(evals)) * size(A, 1) # should work for any numeric data type
+        zero_eig = count(x -> abs(x) <= atol, evals) # count eigenvalues ≈ 0
+        if (zero_eig > 1) # in the regime where the algorithm could fail
+            test = generic_normInf(R*R .-= A0) <= eps(typeof(atol))^(1//4) * generic_normInf(A0)
+            if !test
+                throw(DomainError("Failed to produce matrix with X^2≈A. Pass `check=false` to ignore. Matrix has two or more null eigenvalues so square root may be inaccurate or matrix may not have a square root."))
+            end
+        end
+    end
+
     Rc = eltype(A0) <: Real ? R : complex(R)
     if A0 isa UpperTriangular
         return UpperTriangular(Rc)

@@ -66,14 +66,16 @@ end
 
 @testset "matrix square root quasi-triangular blockwise" begin
     @testset for T in (Float32, Float64, ComplexF32, ComplexF64)
-        A = schur(rand(T, 100, 100)^2).T
-        @test LinearAlgebra.sqrt_quasitriu(A; blockwidth=16)^2 ≈ A
+        schurA = schur(rand(T, 100, 100)^2)
+        A = schurA.T
+        @test LinearAlgebra.sqrt_quasitriu(A, schurA.values; blockwidth=16)^2 ≈ A
     end
     n = 256
     A = rand(ComplexF64, n, n)
-    U = schur(A).T
+    schurA = schur(A)
+    U = schurA.T
     Ubig = Complex{BigFloat}.(U)
-    @test LinearAlgebra.sqrt_quasitriu(U; blockwidth=64) ≈ LinearAlgebra.sqrt_quasitriu(Ubig; blockwidth=64)
+    @test LinearAlgebra.sqrt_quasitriu(U, schurA.values; blockwidth=64) ≈ LinearAlgebra.sqrt_quasitriu(Ubig, schurA.values; blockwidth=64)
 end
 
 @testset "sylvester quasi-triangular blockwise" begin
@@ -260,7 +262,7 @@ const TESTDIR = joinpath(Sys.BINDIR, "..", "share", "julia", "test")
     end
 end
 
-@testset "inplace mul of appropriate types should preserve triagular structure" begin
+@testset "inplace mul of appropriate types should preserve triangular structure" begin
     for elty1 in (Float64, ComplexF32), elty2 in (Float64, ComplexF32)
         T = promote_type(elty1, elty2)
         M1 = rand(elty1, 5, 5)

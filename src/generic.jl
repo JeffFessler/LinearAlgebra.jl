@@ -121,8 +121,8 @@ MulAddMul() = MulAddMul{true,true,Bool,Bool}(true, false)
 @inline (p::MulAddMul{false})(x) = x * p.alpha
 @inline (::MulAddMul{true, true})(x, _) = x
 @inline (p::MulAddMul{false, true})(x, _) = x * p.alpha
-@inline (p::MulAddMul{true, false})(x, y) = x + y * p.beta
-@inline (p::MulAddMul{false, false})(x, y) = x * p.alpha + y * p.beta
+@inline (p::MulAddMul{true, false})(x, y) = muladd(y, p.beta, x)
+@inline (p::MulAddMul{false, false})(x, y) = muladd(y, p.beta, x * p.alpha)
 
 _iszero_alpha(m::MulAddMul) = iszero(m.alpha)
 _iszero_alpha(m::MulAddMul{true}) = false
@@ -579,20 +579,14 @@ function generic_norm2(x)
     T = typeof(maxabs)
     if isfinite(length(x)*maxabs*maxabs) && !iszero(maxabs*maxabs) # Scaling not necessary
         sum::promote_type(Float64, T) = norm_sqr(v)
-        while true
-            y = iterate(x, s)
-            y === nothing && break
-            (v, s) = y
+        for v in Iterators.rest(x, s)
             sum += norm_sqr(v)
         end
         ismissing(sum) && return missing
         return convert(T, sqrt(sum))
     else
         sum = abs2(norm(v)/maxabs)
-        while true
-            y = iterate(x, s)
-            y === nothing && break
-            (v, s) = y
+        for v in Iterators.rest(x, s)
             sum += (norm(v)/maxabs)^2
         end
         ismissing(sum) && return missing
@@ -614,10 +608,7 @@ function generic_normp(x, p)
     spp::promote_type(Float64, T) = p
     if -1 <= p <= 1 || (isfinite(length(x)*maxabs^spp) && !iszero(maxabs^spp)) # scaling not necessary
         sum::promote_type(Float64, T) = norm(v)^spp
-        while true
-            y = iterate(x, s)
-            y === nothing && break
-            (v, s) = y
+        for v in Iterators.rest(x, s)
             ismissing(v) && return missing
             sum += norm(v)^spp
         end
@@ -625,10 +616,7 @@ function generic_normp(x, p)
     else # rescaling
         sum = (norm(v)/maxabs)^spp
         ismissing(sum) && return missing
-        while true
-            y = iterate(x, s)
-            y === nothing && break
-            (v, s) = y
+        for v in Iterators.rest(x, s)
             ismissing(v) && return missing
             sum += (norm(v)/maxabs)^spp
         end
@@ -938,7 +926,7 @@ vector is conjugated.
 `dot` also works on arbitrary iterable objects, including arrays of any dimension,
 as long as `dot` is defined on the elements.
 
-`dot` is semantically equivalent to `sum(dot(vx,vy) for (vx,vy) in zip(x, y))`,
+`dot` is semantically equivalent to `reduce(+, dot(vx,vy) for (vx,vy) in zip(x, y))`,
 with the added restriction that the arguments must have equal lengths.
 
 `x ⋅ y` (where `⋅` can be typed by tab-completing `\\cdot` in the REPL) is a synonym for
@@ -1005,7 +993,8 @@ function dot(x::AbstractArray, y::AbstractArray)
         throw(DimensionMismatch(lazy"first array has length $(lx) which does not match the length of the second, $(length(y))."))
     end
     if lx == 0
-        return dot(zero(eltype(x)), zero(eltype(y)))
+        # make sure the returned result equals exactly the zero element
+        return zero(dot(zero(eltype(x)), zero(eltype(y))))
     end
     s = zero(dot(first(x), first(y)))
     for (Ix, Iy) in zip(eachindex(x), eachindex(y))
@@ -1046,6 +1035,8 @@ dot(x, A, y) = dot(x, A*y) # generic fallback for cases that are not covered by 
 
 function dot(x::AbstractVector, A::AbstractMatrix, y::AbstractVector)
     (axes(x)..., axes(y)...) == axes(A) || throw(DimensionMismatch())
+    # outermost zero call to avoid spurious sign ambiguity (like 0.0 - 0.0im)
+    any(isempty, (x, y)) && return zero(dot(zero(eltype(x)), zero(eltype(A)), zero(eltype(y))))
     T = typeof(dot(first(x), first(A), first(y)))
     s = zero(T)
     i₁ = first(eachindex(x))
@@ -1181,18 +1172,17 @@ end
 inv(A::Adjoint) = adjoint(inv(parent(A)))
 inv(A::Transpose) = transpose(inv(parent(A)))
 
-pinv(v::AbstractVector{T}, tol::Real = real(zero(T))) where {T<:Real} = _vectorpinv(transpose, v, tol)
-pinv(v::AbstractVector{T}, tol::Real = real(zero(T))) where {T<:Complex} = _vectorpinv(adjoint, v, tol)
-pinv(v::AbstractVector{T}, tol::Real = real(zero(T))) where {T} = _vectorpinv(adjoint, v, tol)
-function _vectorpinv(dualfn::Tf, v::AbstractVector{Tv}, tol) where {Tv,Tf}
-    res = dualfn(similar(v, typeof(zero(Tv) / (abs2(one(Tv)) + abs2(one(Tv))))))
+_pinvadjoint(v::AbstractVector{T}) where {T<:Real} = transpose(v)
+_pinvadjoint(v::AbstractVector) = adjoint(v)
+function pinv(v::AbstractVector{T}, tol::Real = real(zero(T))) where {T}
+    res = _pinvadjoint(similar(v, typeof(zero(T) / (abs2(one(T)) + abs2(one(T))))))
     den = sum(abs2, v)
     # as tol is the threshold relative to the maximum singular value, for a vector with
     # single singular value σ=√den, σ ≦ tol*σ is equivalent to den=0 ∨ tol≥1
     if iszero(den) || tol >= one(tol)
         fill!(res, zero(eltype(res)))
     else
-        res .= dualfn(v) ./ den
+        res .= _pinvadjoint(v) ./ den
     end
     return res
 end
@@ -1236,6 +1226,7 @@ true
 function (\)(A::AbstractMatrix, B::AbstractVecOrMat)
     require_one_based_indexing(A, B)
     m, n = size(A)
+    T = promote_op(\, eltype(A), eltype(B))
     if m == n
         if istril(A)
             if istriu(A)
@@ -1247,12 +1238,16 @@ function (\)(A::AbstractMatrix, B::AbstractVecOrMat)
         if istriu(A)
             return UpperTriangular(A) \ B
         end
-        return lu(A) \ B
+        return lu(convert(AbstractArray{T}, A)) \ B
     end
-    return qr(A, ColumnNorm()) \ B
+    return qr(convert(AbstractArray{T}, A), ColumnNorm()) \ B
 end
 
-(\)(a::AbstractVector, b::AbstractArray) = pinv(a) * b
+function (\)(a::AbstractVector, b::AbstractArray)
+    den = sum(abs2, a)
+    goodden = den == 0 ? one(den) : den
+    return _pinvadjoint(a) * b / goodden
+end
 """
     A / B
 
@@ -1283,7 +1278,11 @@ function (/)(A::AbstractVecOrMat, B::AbstractVecOrMat)
 end
 # \(A::StridedMatrix,x::Number) = inv(A)*x Should be added at some point when the old elementwise version has been deprecated long enough
 # /(x::Number,A::StridedMatrix) = x*inv(A)
-/(x::Number, v::AbstractVector) = x*pinv(v)
+function (/)(x::Number, v::AbstractVector)
+    den = sum(abs2, v)
+    goodden = den == 0 ? one(den) : den
+    return (x / goodden) * _pinvadjoint(v)
+end
 
 cond(x::Number) = iszero(x) ? Inf : 1.0
 cond(x::Number, p) = cond(x)
@@ -2148,19 +2147,20 @@ function copytrito!(B::AbstractMatrix, A::AbstractMatrix, uplo::AbstractChar)
     BLAS.chkuplo(uplo)
     B === A && return B
     m,n = size(A)
+    d = min(m,n)
     A = Base.unalias(B, A)
     if uplo == 'U'
-        LAPACK.lacpy_size_check(size(B), (n < m ? n : m, n))
+        LAPACK.lacpy_size_check(size(B), (d, n))
         # extract the parents for UpperTriangular matrices
         Bv, Av = uppertridata(B), uppertridata(A)
         for j in axes(A,2), i in axes(A,1)[begin : min(j,end)]
             @inbounds Bv[i,j] = Av[i,j]
         end
     else # uplo == 'L'
-        LAPACK.lacpy_size_check(size(B), (m, m < n ? m : n))
+        LAPACK.lacpy_size_check(size(B), (m, d))
         # extract the parents for LowerTriangular matrices
         Bv, Av = lowertridata(B), lowertridata(A)
-        for j in axes(A,2), i in axes(A,1)[j:end]
+        for j in axes(A,2)[1:d], i in axes(A,1)[j:end]
             @inbounds Bv[i,j] = Av[i,j]
         end
     end

@@ -784,6 +784,10 @@ end
         @test dot(x, B', y) ≈ dot(B*x, y)
         elty <: Real && @test dot(x, transpose(B), y) ≈ dot(x, transpose(B)*y)
     end
+    for (m, n) in ((0, 0), (1, 0), (0, 1))
+        v = zeros(ComplexF64, m); a = zeros(ComplexF64, m, n); w = zeros(Float64, n)
+        @test dot(v, a, w) === zero(ComplexF64)
+    end
 end
 
 @testset "condskeel #34512" begin
@@ -952,6 +956,27 @@ end
     n = @allocated isapprox(A, A)
     @test n == 0
     @test Int[] ≈ Int[]
+end
+
+@testset "issue 930" begin
+    A = rand(Int, 2, 2)
+    B = rand(Int, 2, 3)
+    C = rand(Int, 2)
+    for T ∈ (Float32, BigFloat)
+        v = randn(T, 2)
+        x = @inferred C \ v
+        @test eltype(x) <: T
+        x = @inferred zero(C) \ v
+        @test eltype(x) <: T
+        x = @inferred T(1) / C
+        @test eltype(x) <: T
+        x = @inferred T(1) / zero(C)
+        @test eltype(x) <: T
+        for M ∈ (A, B)
+            x = @inferred M \ v
+            @test eltype(x) <: T
+        end
+    end
 end
 
 end # module TestGeneric

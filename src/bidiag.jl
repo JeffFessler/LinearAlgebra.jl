@@ -249,6 +249,7 @@ AbstractMatrix{T}(A::Bidiagonal{T}) where {T} = copy(A)
 
 function convert(::Type{T}, A::AbstractMatrix) where T<:Bidiagonal
     checksquare(A)
+    A isa T && return A
     isbanded(A, -1, 1) || throw(InexactError(:convert, T, A))
     iszero(diagview(A, 1)) ? T(A, :L) :
         iszero(diagview(A, -1)) ? T(A, :U) : throw(InexactError(:convert, T, A))
@@ -260,9 +261,8 @@ similar(B::Bidiagonal, ::Type{T}, dims::Union{Dims{1},Dims{2}}) where {T} = simi
 tr(B::Bidiagonal) = sum(B.dv)
 
 function kron(A::Diagonal, B::Bidiagonal)
-    # `_droplast!` is only guaranteed to work with `Vector`
-    kdv = convert(Vector, kron(diag(A), B.dv))
-    kev = _droplast!(convert(Vector, kron(diag(A), _pushzero(B.ev))))
+    kdv = kron(A.diag, B.dv)
+    kev = _diagonal_kron!(similar(kdv, length(kdv) - 1), A.diag, B.ev)
     Bidiagonal(kdv, kev, B.uplo)
 end
 
@@ -289,7 +289,7 @@ function _opnorm1Inf(B::Bidiagonal, p)
     case = xor(p == 1, istriu(B))
     normd1, normdend = norm(first(B.dv)), norm(last(B.dv))
     normd1, normdend = case ? (zero(normd1), normdend) : (normd1, zero(normdend))
-    return max(mapreduce(t -> sum(norm, t), max, zip(view(B.dv, (1:length(B.ev)) .+ !case), B.ev)), normdend)
+    return max(mapreduce(t -> sum(norm, t), max, zip(view(B.dv, (1:length(B.ev)) .+ !case), B.ev)), normd1, normdend)
 end
 
 ####################
@@ -302,7 +302,7 @@ function show(io::IO, M::Bidiagonal)
     print(io, ", ")
     show(io, M.ev)
     print(io, ", ")
-    show(io, sym_uplo(M.uplo))
+    show(io, _sym_uplo(M.uplo))
     print(io, ")")
 end
 
@@ -1292,7 +1292,7 @@ function dot(x::AbstractVector, B::Bidiagonal, y::AbstractVector)
     nx, ny = length(x), length(y)
     (nx == size(B, 1) == ny) || throw(DimensionMismatch())
     if nx ≤ 1
-        nx == 0 && return dot(zero(eltype(x)), zero(eltype(B)), zero(eltype(y)))
+        nx == 0 && return zero(dot(zero(eltype(x)), zero(eltype(B)), zero(eltype(y))))
         return dot(x[1], B.dv[1], y[1])
     end
     ev, dv = B.ev, B.dv
@@ -1357,7 +1357,9 @@ function ldiv!(c::AbstractVecOrMat, A::Bidiagonal, b::AbstractVecOrMat)
 end
 
 ### Generic promotion methods and fallbacks
-\(A::Bidiagonal, B::AbstractVecOrMat) =
+\(A::Bidiagonal, B::AbstractVector) =
+    ldiv!(similar(B, promote_op(\, eltype(A), eltype(B))), A, B)
+\(A::Bidiagonal, B::AbstractMatrix) =
     ldiv!(matprod_dest(A, B, promote_op(\, eltype(A), eltype(B))), A, B)
 
 ### Triangular specializations
