@@ -56,10 +56,10 @@ function (*)(A::StridedMaybeAdjOrTransMat{T}, x::StridedVector{S}) where {T<:Bla
     y = isconcretetype(TS) ? convert(AbstractVector{TS}, x) : x
     mul!(similar(x, TS, size(A,1)), A, y)
 end
-function (*)(A::AbstractMatrix{T}, x::AbstractVector{S}) where {T,S}
+function (*)(A::AbstractMatrix, x::AbstractVector)
     matmul_size_check(size(A), size(x))
-    TS = promote_op(matprod, T, S)
-    mul!(similar(x, TS, axes(A,1)), A, x)
+    TS = promote_op(matprod, eltype(A), eltype(x))
+    mul!(matprod_dest(A, x, TS), A, x)
 end
 
 # these will throw a DimensionMismatch unless B has 1 row (or 1 col for transposed case):
@@ -132,6 +132,27 @@ Return an appropriate `AbstractArray` with element type `T` that may be used to 
     This function requires at least Julia 1.11
 """
 matprod_dest(A, B, T) = similar(B, T, (size(A, 1), size(B, 2)))
+matprod_dest(A, x::AbstractVector, T) = similar(x, T, axes(A,1))
+
+"""
+    matldiv_dest(A, B)
+
+Return an appropriate `AbstractArray` that may be used to store the result of `A \\ B`.
+
+!!! compat
+    This function requires at least Julia 1.14
+"""
+matldiv_dest(A, B) = similar(B, promote_op(\, eltype(A), eltype(B)), size(B))
+
+"""
+    matrdiv_dest(A, B)
+
+Return an appropriate `AbstractArray` that may be used to store the result of `A / B`.
+
+!!! compat
+    This function requires at least Julia 1.14
+"""
+matrdiv_dest(A, B) = similar(A, promote_op(/, eltype(A), eltype(B)), size(A))
 
 # optimization for dispatching to BLAS, e.g. *(::Matrix{Float32}, ::Matrix{Float64})
 # but avoiding the case *(::Matrix{<:BlasComplex}, ::Matrix{<:BlasReal})
