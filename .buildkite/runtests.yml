@@ -6,9 +6,9 @@ steps:
     retry:
       automatic:
         - exit_status: -1
-          limit: 2
+          limit: 1
         - signal_reason: agent_stop
-          limit: 2
+          limit: 1
     plugins:
       # Julia installation outside the sandbox
       - JuliaCI/julia#v1:
@@ -35,9 +35,9 @@ steps:
     retry:
       automatic:
         - exit_status: -1
-          limit: 2
+          limit: 1
         - signal_reason: agent_stop
-          limit: 2
+          limit: 1
     plugins:
       # Julia installation outside the sandbox
       - JuliaCI/julia#v1:
@@ -65,9 +65,9 @@ steps:
     retry:
       automatic:
         - exit_status: -1
-          limit: 2
+          limit: 1
         - signal_reason: agent_stop
-          limit: 2
+          limit: 1
     plugins:
       - JuliaCI/julia#v1:
           version: "nightly"
@@ -85,9 +85,9 @@ steps:
     retry:
       automatic:
         - exit_status: -1
-          limit: 2
+          limit: 1
         - signal_reason: agent_stop
-          limit: 2
+          limit: 1
     plugins:
       - JuliaCI/julia#v1:
           version: "nightly"
