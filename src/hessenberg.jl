@@ -430,6 +430,67 @@ function dot(x::AbstractVector, H::UpperHessenberg, y::AbstractVector)
     return r
 end
 
+# faster eigenvalues, since we can skip the intermediate step of Hessenberg factorization.
+# note: permute==true is ignored, since that could spoil the upper-Hessenberg structure
+function eigvals!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasComplex}
+    LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1))
+    return sorteig!(LAPACK.hseqr!('E', 'N', 1, size(H,1), H.data, H.data)[3], sortby)
+end
+function eigvals!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasReal}
+    LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1))
+    _, _, vals = LAPACK.hseqr!('E', 'N', 1, size(H,1), H.data, H.data)
+    return sorteig!(isreal(vals) ? real(vals) : vals, sortby)
+end
+
+
+function eigen!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasComplex}
+    ilo, ihi, s = LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1)) # balance by scaling
+    _, Z, vals = LAPACK.hseqr!(H.data)
+    LAPACK.trevc!('R', 'B', BlasInt[], H.data, Z, Z) # set Z to right eigenvecs
+    LAPACK.gebak!(scale ? 'S' : 'N', 'R', ilo, ihi, s, Z) # undo balancing
+    foreach(eigvec_normalize!, eachcol(Z)) # normalize eigenvecs
+    return Eigen(sorteig!(vals, Z, sortby)...)
+end
+
+function eigen!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasReal}
+    ilo, ihi, s = LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1)) # balance by scaling
+    _, Z, vals = LAPACK.hseqr!(H.data)
+    LAPACK.trevc!('R', 'B', BlasInt[], H.data, Z, Z) # set Z to right eigenvecs (for complex, see below)
+    LAPACK.gebak!(scale ? 'S' : 'N', 'R', ilo, ihi, s, Z) # undo balancing
+    if isreal(vals)
+        foreach(eigvec_normalize!, eachcol(Z)) # normalize eigenvecs
+        return Eigen(sorteig!(real(vals), Z, sortby)...)
+    else # complex eigenvalues: real/imag eigenvec parts stored in consecutive cols of Z
+        V = complex(Z)
+        k = 1
+        @inbounds while k <= length(vals)
+            if isreal(vals[k])
+                k += 1
+            else # complex-conjugate pair
+                for j = 1:size(V,1)
+                    V[j, k] = complex(Z[j,k], Z[j,k+1])
+                    V[j, k+1] = complex(Z[j,k], -Z[j,k+1])
+                end
+                k += 2
+            end
+        end
+        foreach(eigvec_normalize!, eachcol(V)) # normalize eigenvecs
+        return Eigen(sorteig!(vals, V, sortby)...)
+    end
+end
+
+# preserve the wrapper for eigensolves with UpperHessenberg
+eigencopy_oftype(H::UpperHessenberg, S) = UpperHessenberg(eigencopy_oftype(H.data, S))
+
+# fallback to dense algorithms
+eigvals!(H::UpperHessenberg; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) =
+    eigvals!(triu!(H.data,-1); permute, scale, sortby)
+eigen!(H::UpperHessenberg; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) =
+    eigen!(triu!(H.data,-1); permute, scale, sortby)
+
+schur!(H::UpperHessenberg{T}) where {T<:BlasFloat} = Schur(LinearAlgebra.LAPACK.hseqr!(H.data)...)
+schur!(H::UpperHessenberg) = schur!(triu!(H.data, -1)) # fallback to dense algorithm
+
 ######################################################################################
 # Hessenberg factorizations Q(H+μI)Q' of A+μI:
 
