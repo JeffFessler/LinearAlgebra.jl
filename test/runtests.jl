@@ -8,6 +8,29 @@ const TESTDIR = joinpath(dirname(pathof(LinearAlgebra)), "..", "test")
 const TESTHELPERS = joinpath(TESTDIR, "testhelpers", "testhelpers.jl")
 isdefined(Main, :LinearAlgebraTestHelpers) || Base.include(Main, TESTHELPERS)
 
+using Main.LinearAlgebraTestHelpers.DualNumbers
+using Main.LinearAlgebraTestHelpers.FillArrays
+using Main.LinearAlgebraTestHelpers.Furlongs
+using Main.LinearAlgebraTestHelpers.ImmutableArrays
+using Main.LinearAlgebraTestHelpers.InfiniteArrays
+using Main.LinearAlgebraTestHelpers.OffsetArrays
+using Main.LinearAlgebraTestHelpers.Quaternions
+using Main.LinearAlgebraTestHelpers.SizedArrays
+using Main.LinearAlgebraTestHelpers.StructArrays
+
+@testset "isequal always infers as Bool" begin
+    good = all(==(Bool), Base.return_types(isequal, Tuple{Any, Any}))
+    if !good
+        # Print some info to make the test failure easier to debug
+        for m in methods(isequal, Tuple{Any, Any})
+            sig = Base.unwrap_unionall(m.sig).parameters[2:end]
+            t = Core.Compiler.return_type(isequal, Tuple{sig...})
+            t != Bool && @info "" m t
+        end
+    end
+    @test good
+end
+
 for file in readlines(joinpath(@__DIR__, "testgroups"))
     @info "Testing $file"
     include(file * ".jl")
