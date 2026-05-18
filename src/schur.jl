@@ -176,7 +176,7 @@ function schur(A::Union{UnitLowerTriangular{T},LowerTriangular{T}}) where {T}
     for i in axes(J, 2)
        J[n+1-i, i] = oneunit(t)
     end
-    return Schur(Z, J, convert(Vector{t}, diag(A)))
+    return Schur(Z, J, reverse!(convert(Vector{t}, diag(A))))
 end
 function schur(A::Bidiagonal{T}) where {T}
     t = eigtype(T)
