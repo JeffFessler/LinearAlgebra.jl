@@ -221,7 +221,8 @@ for (S, H) in ((:Symmetric, :Hermitian), (:Hermitian, :Symmetric))
         end
     end
 end
-
+# zero should forward to the parent array type
+zero(A::Union{Symmetric,Hermitian}) = wrappertype(A)(zero(parent(A)), _sym_uplo(A.uplo))
 convert(::Type{T}, m::Union{Symmetric,Hermitian}) where {T<:Symmetric} = m isa T ? m : T(m)::T
 convert(::Type{T}, m::Union{Symmetric,Hermitian}) where {T<:Hermitian} = m isa T ? m : T(m)::T
 
@@ -989,7 +990,9 @@ function log(A::SelfAdjoint)
 end
 
 # sqrt has rtol kwarg to handle matrices that are semidefinite up to roundoff errors
-function sqrt(A::SelfAdjoint; rtol = eps(real(float(eltype(A)))) * size(A, 1))
+# note a `check` keyword argument is accepted for consistency with the generic `sqrt` function,
+# but it is not used here, as a self-adjoint matrix is diagonalizable and hence always has a sqrt.
+function sqrt(A::SelfAdjoint; check::Bool=true, rtol = eps(real(float(eltype(A)))) * size(A, 1))
     F = eigen(A)
     λ₀ = -maximum(abs, F.values) * rtol # treat λ ≥ λ₀ as "zero" eigenvalues up to roundoff
     if all(λ -> λ ≥ λ₀, F.values)

@@ -536,7 +536,7 @@ lmul!(s::Number, X::Adjoint) = (rmul!(parent(X), s'); X)
 
 ## pseudoinversion
 pinv(v::AdjointAbsVec, tol::Real = 0) = pinv(v.parent, tol).parent
-pinv(v::TransposeAbsVec, tol::Real = 0) = pinv(conj(v.parent)).parent
+pinv(v::TransposeAbsVec, tol::Real = 0) = pinv(conj(v.parent), tol).parent
 
 
 ## left-division \
@@ -575,8 +575,8 @@ Compute `vec(adjoint(A))`, but avoid an allocating reshape if possible
 _vecadjoint(A::AbstractVector) = vec(adjoint(A))
 _vecadjoint(A::Base.ReshapedArray{<:Any,1,<:AdjointAbsVec}) = adjoint(parent(A))
 
-diagview(A::Transpose, k::Integer = 0) = _vectranspose(diagview(parent(A), -k))
-diagview(A::Adjoint, k::Integer = 0) = _vecadjoint(diagview(parent(A), -k))
+diagview(A::TransposeAbsMat, k::Integer = 0) = _vectranspose(diagview(parent(A), -k))
+diagview(A::AdjointAbsMat, k::Integer = 0) = _vecadjoint(diagview(parent(A), -k))
 
 # triu and tril
 triu!(A::AdjOrTransAbsMat, k::Integer = 0) = wrapperop(A)(tril!(parent(A), -k))

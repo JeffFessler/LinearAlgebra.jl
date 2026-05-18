@@ -294,6 +294,45 @@ end
     @test C == AB
 end
 
+# `generic_matvecmul!` and `generic_matmatmul!` are `public`. Each method must
+# be exercised by a direct call somewhere in the test suite, so that any
+# accidental change to a signature is caught here. The correctness of these
+# functions should already be well covered by other tests.
+@testset "`generic_matvecmul!` is public" begin
+    A = [1.0 2.0 3.0; 4.0 5.0 6.0]
+    x = [7.0, 8.0, 9.0]
+    # BlasFloat strided, alpha/beta
+    @test LinearAlgebra.generic_matvecmul!(zeros(2), 'N', A, x, 1.0, 0.0) ≈ A * x
+    # Real matrix, complex vector
+    xc = ComplexF64[7+1im, 8+2im, 9+3im]
+    @test LinearAlgebra.generic_matvecmul!(zeros(ComplexF64, 2), 'N', A, xc, 1.0, 0.0) ≈ A * xc
+    # Complex matrix, real vector
+    Ac = ComplexF64[1+1im 2 3; 4 5 6+1im]
+    @test LinearAlgebra.generic_matvecmul!(zeros(ComplexF64, 2), 'N', Ac, x, 1.0, 0.0) ≈ Ac * x
+    # Generic AbstractVector with MulAddMul (legacy)
+    Aq = Rational{Int}[1 2; 3 4]
+    xq = Rational{Int}[5, 6]
+    @test LinearAlgebra.generic_matvecmul!(zeros(Rational{Int}, 2), 'N', Aq, xq, LinearAlgebra.MulAddMul(2, 0)) == 2 * Aq * xq
+    # Generic AbstractVector with alpha/beta
+    @test LinearAlgebra.generic_matvecmul!(zeros(Rational{Int}, 2), 'T', Aq, xq, 1, 0) == transpose(Aq) * xq
+end
+
+@testset "`generic_matmatmul!` is public" begin
+    A = [1.0 2.0; 3.0 4.0]
+    B = [5.0 6.0; 7.0 8.0]
+    # BlasFloat strided with MulAddMul
+    @test LinearAlgebra.generic_matmatmul!(zeros(2, 2), 'N', 'N', A, B, LinearAlgebra.MulAddMul(2, 0)) ≈ 2 * A * B
+    # Complex C and A, real B (mixed-eltype) with MulAddMul
+    Ac = ComplexF64[1+1im 2; 3 4-1im]
+    @test LinearAlgebra.generic_matmatmul!(zeros(ComplexF64, 2, 2), 'N', 'N', Ac, B, LinearAlgebra.MulAddMul(1, 0)) ≈ Ac * B
+    # Generic AbstractVecOrMat with MulAddMul
+    Aq = Rational{Int}[1 2; 3 4]
+    Bq = Rational{Int}[5 6; 7 8]
+    @test LinearAlgebra.generic_matmatmul!(zeros(Rational{Int}, 2, 2), 'N', 'N', Aq, Bq, LinearAlgebra.MulAddMul(1, 0)) == Aq * Bq
+    # AbstractVecOrMat with alpha/beta
+    @test LinearAlgebra.generic_matmatmul!(zeros(2, 2), 'N', 'T', A, B, 1.0, 0.0) ≈ A * transpose(B)
+end
+
 @testset "fallbacks & such for BlasFloats" begin
     AA = rand(Float64, 6, 6)
     BB = rand(Float64, 6, 6)
@@ -766,9 +805,6 @@ end
     @test LinearAlgebra.gemm_wrapper('N', 'N', I10x10, I10x10) == I10x10
     @test_throws DimensionMismatch LinearAlgebra.gemm_wrapper!(I10x10, 'N', 'N', I10x11, I10x10)
     @test_throws DimensionMismatch LinearAlgebra.gemm_wrapper!(I10x10, 'N', 'N', I0x0, I0x0)
-
-    A = rand(elty, 3, 3)
-    @test LinearAlgebra.matmul3x3('T', 'N', A, Matrix{elty}(I, 3, 3)) == transpose(A)
 end
 
 @testset "#13593, #13488" begin
@@ -1106,6 +1142,15 @@ end
     @test M44 * M44 * M44 ≈ (M44 * M44) * M44 ≈ M44 * (M44 * M44)
     @test M42 * M24 * M44 ≈ (M42 * M24) * M44 ≈ M42 * (M24 * M44)
     @test M44 * M42 * M24 ≈ (M44 * M42) * M24 ≈ M44 * (M42 * M24)
+end
+
+@testset "3-arg *, RealOrComplex * Matrix{Complex} * Matrix{Real}" begin
+    a = 0.5 + 2.5im
+    A = randn(ComplexF64, 5, 5)
+    B = randn(Float64, 5, 5)
+    b = randn(Float64, 5)
+    @test a*A*B ≈ real(a)*A*B + im*(imag(a)*A*B) ≈ A * (a*B)
+    @test a*A*b ≈ real(a)*A*b + im*(imag(a)*A*b) ≈ A * (a*b)
 end
 
 @testset "4-arg *, by type" begin

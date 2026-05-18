@@ -798,6 +798,12 @@ end
     @test convert(AbstractMatrix{Float64}, Bu)::Bidiagonal{Float64,ImmutableArray{Float64,1,Array{Float64,1}}} == Bu
     @test convert(AbstractArray{Float64}, Bl)::Bidiagonal{Float64,ImmutableArray{Float64,1,Array{Float64,1}}} == Bl
     @test convert(AbstractMatrix{Float64}, Bl)::Bidiagonal{Float64,ImmutableArray{Float64,1,Array{Float64,1}}} == Bl
+
+    @testset "convert to Bidiagonal from same type" begin
+        @test convert(typeof(Bu), Bu) === Bu
+        @test convert(Bidiagonal{eltype(Bu)}, Bu) === Bu
+        @test convert(Bidiagonal, Bu) === Bu
+    end
 end
 
 @testset "block-bidiagonal matrix" begin
@@ -1151,7 +1157,9 @@ end
                 Bidiagonal([2], Int[], 'L'),
                 Bidiagonal([2], Int[], 'U'),
                 Bidiagonal([1,-2], [-4], 'U'),
-                Bidiagonal([1,-2], [-4], 'L')
+                Bidiagonal([1,-2], [-4], 'L'),
+                Bidiagonal([100, 2, 3], [1, 1], 'U'),  # first column dominates 1-norm
+                Bidiagonal([100, 2, 3], [1, 1], 'L'),  # first row dominates Inf-norm
             )
         @test opnorm(B, 1) == opnorm(Matrix(B), 1)
         @test opnorm(B, 2) ≈ opnorm(Matrix(B), 2)

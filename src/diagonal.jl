@@ -104,6 +104,7 @@ Diagonal{T}(A::AbstractMatrix) where T = Diagonal{T}(diag(A))
 Diagonal{T,V}(A::AbstractMatrix) where {T,V<:AbstractVector{T}} = Diagonal{T,V}(diag(A))
 function convert(::Type{T}, A::AbstractMatrix) where T<:Diagonal
     checksquare(A)
+    A isa T && return A
     isdiag(A) ? T(A) : throw(InexactError(:convert, T, A))
 end
 
@@ -330,6 +331,10 @@ end
 Base.literal_pow(::typeof(^), D::Diagonal, valp::Val) =
     Diagonal(Base.literal_pow.(^, D.diag, valp)) # for speed
 Base.literal_pow(::typeof(^), D::Diagonal, ::Val{-1}) = inv(D) # for disambiguation
+
+postop_proc(::MulOrDiv, C, _, ::Diagonal) = C
+postop_proc(::MulOrDiv, C, ::Diagonal, _) = C
+postop_proc(::MulOrDiv, C, ::Diagonal, ::Diagonal) = C
 
 function mul(Da::Diagonal, Db::Diagonal)
     matmul_size_check(size(Da), size(Db))
@@ -605,7 +610,10 @@ function (*)(Da::Diagonal, Db::Diagonal, Dc::Diagonal)
     return Diagonal(Da.diag .* Db.diag .* Dc.diag)
 end
 
-/(A::AbstractVecOrMat, D::Diagonal) = _rdiv!(matprod_dest(A, D, promote_op(/, eltype(A), eltype(D))), A, D)
+matop_dest(::typeof(/), A, D::Diagonal) = similar(A, promote_op(/, eltype(A), eltype(D)))
+matop_dest(::typeof(/), A::HermOrSym, D::Diagonal) = similar(A, promote_op(/, eltype(A), eltype(D)), size(A))
+
+/(A::AbstractVecOrMat, D::Diagonal) = _rdiv!(matop_dest(/, A, D), A, D)
 
 rdiv!(A::AbstractVecOrMat, D::Diagonal) = @inline _rdiv!(A, A, D)
 # avoid copy when possible via internal 3-arg backend
@@ -626,12 +634,10 @@ function _rdiv!(B::AbstractVecOrMat, A::AbstractVecOrMat, D::Diagonal)
     B
 end
 
-function \(D::Diagonal, B::AbstractVector)
-    j = findfirst(iszero, D.diag)
-    isnothing(j) || throw(SingularException(j))
-    return D.diag .\ B
-end
-\(D::Diagonal, B::AbstractMatrix) = ldiv!(matprod_dest(D, B, promote_op(\, eltype(D), eltype(B))), D, B)
+matop_dest(::typeof(\), D::Diagonal, B) = similar(B, promote_op(\, eltype(D), eltype(B)))
+matop_dest(::typeof(\), D::Diagonal, B::HermOrSym) = similar(B, promote_op(\, eltype(D), eltype(B)), size(B))
+
+\(D::Diagonal, B::AbstractVecOrMat) = ldiv!(matop_dest(\, D, B), D, B)
 
 ldiv!(D::Diagonal, B::AbstractVecOrMat) = @inline ldiv!(B, D, B)
 function ldiv!(B::AbstractVecOrMat, D::Diagonal, A::AbstractVecOrMat)
@@ -678,14 +684,13 @@ ldiv!(Dc::Diagonal, Da::Diagonal, Db::Diagonal) = Diagonal(ldiv!(Dc.diag, Da, Db
 @propagate_inbounds _getldiag(T::Tridiagonal, i) = T.dl[i]
 @propagate_inbounds _getldiag(S::SymTridiagonal, i) = transpose(S.ev[i])
 
-function (\)(D::Diagonal, S::SymTridiagonal)
+function matop_dest(::typeof(\), D::Diagonal, S::SymTridiagonal)
     T = promote_op(\, eltype(D), eltype(S))
-    du = similar(S.ev, T, max(length(S.dv)-1, 0))
-    d  = similar(S.dv, T, length(S.dv))
-    dl = similar(S.ev, T, max(length(S.dv)-1, 0))
-    ldiv!(Tridiagonal(dl, d, du), D, S)
+    du = similar(S.ev, T)
+    d  = similar(S.dv, T)
+    return Tridiagonal(similar(du), d, du)
 end
-(\)(D::Diagonal, T::Tridiagonal) = ldiv!(similar(T, promote_op(\, eltype(D), eltype(T))), D, T)
+
 function ldiv!(T::Tridiagonal, D::Diagonal, S::Union{SymTridiagonal,Tridiagonal})
     m = size(S, 1)
     dd = D.diag
@@ -715,14 +720,13 @@ function ldiv!(T::Tridiagonal, D::Diagonal, S::Union{SymTridiagonal,Tridiagonal}
     return T
 end
 
-function (/)(S::SymTridiagonal, D::Diagonal)
-    T = promote_op(\, eltype(D), eltype(S))
-    du = similar(S.ev, T, max(length(S.dv)-1, 0))
-    d  = similar(S.dv, T, length(S.dv))
-    dl = similar(S.ev, T, max(length(S.dv)-1, 0))
-    _rdiv!(Tridiagonal(dl, d, du), S, D)
+function matop_dest(::typeof(/), S::SymTridiagonal, D::Diagonal)
+    T = promote_op(/, eltype(S), eltype(D))
+    du = similar(S.ev, T)
+    d  = similar(S.dv, T)
+    return Tridiagonal(similar(du), d, du)
 end
-(/)(T::Tridiagonal, D::Diagonal) = _rdiv!(matprod_dest(T, D, promote_op(/, eltype(T), eltype(D))), T, D)
+
 function _rdiv!(T::Tridiagonal, S::Union{SymTridiagonal,Tridiagonal}, D::Diagonal)
     n = size(S, 2)
     dd = D.diag
@@ -825,18 +829,37 @@ function kron!(C::Diagonal, A::Diagonal, B::Diagonal)
     return C
 end
 
+#efficient way of doing kron(a, [b; 0])[1:end-1]
+function _diagonal_kron!(c, a, b)
+    z = zero(first(a) * first(b))
+    counter = 0
+    @inbounds for i in firstindex(a):lastindex(a) - 1
+        ai = a[i]
+        for bj in b
+            counter += 1
+            c[counter] = ai * bj
+        end
+        counter += 1
+        c[counter] = z
+    end
+    ai = last(a)
+    @inbounds for bj in b
+        counter += 1
+        c[counter] = ai * bj
+    end
+    return c
+end
+
 function kron(A::Diagonal, B::SymTridiagonal)
     kdv = kron(A.diag, B.dv)
-    # We don't need to drop the last element
-    kev = kron(A.diag, _pushzero(_evview(B)))
-    SymTridiagonal(kdv, kev)
+    kev = _diagonal_kron!(similar(kdv, length(kdv) - 1), A.diag, B.ev)
+    return SymTridiagonal(kdv, kev)
 end
 function kron(A::Diagonal, B::Tridiagonal)
-    # `_droplast!` is only guaranteed to work with `Vector`
-    kd = convert(Vector, kron(A.diag, B.d))
-    kdl = _droplast!(convert(Vector, kron(A.diag, _pushzero(B.dl))))
-    kdu = _droplast!(convert(Vector, kron(A.diag, _pushzero(B.du))))
-    Tridiagonal(kdl, kd, kdu)
+    kd = kron(A.diag, B.d)
+    kdl = _diagonal_kron!(similar(kd, length(kd) - 1), A.diag, B.dl)
+    kdu = _diagonal_kron!(similar(kd, length(kd) - 1), A.diag, B.du)
+    return Tridiagonal(kdl, kd, kdu)
 end
 
 @inline function kron!(C::AbstractMatrix, A::Diagonal, B::AbstractMatrix)

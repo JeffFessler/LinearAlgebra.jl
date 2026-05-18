@@ -162,51 +162,28 @@ end
 
 mul(H::UpperHessenberg, D::Diagonal) = UpperHessenberg(H.data * D)
 mul(D::Diagonal, H::UpperHessenberg) = UpperHessenberg(D * H.data)
-function mul(H::UpperHessenberg, U::UpperOrUnitUpperTriangular)
-    HH = mul!(matprod_dest(H, U, promote_op(matprod, eltype(H), eltype(U))), H, U)
-    UpperHessenberg(HH)
-end
-function mul(U::UpperOrUnitUpperTriangular, H::UpperHessenberg)
-    HH = mul!(matprod_dest(U, H, promote_op(matprod, eltype(U), eltype(H))), U, H)
-    UpperHessenberg(HH)
-end
+
+postop_proc(::Union{typeof(*),typeof(/)}, C, ::UpperHessenberg, ::UpperOrUnitUpperTriangular) = UpperHessenberg(C)
+postop_proc(::Union{typeof(*),typeof(/)}, C, ::UpperHessenberg, B::Bidiagonal) = B.uplo == 'U' ? UpperHessenberg(C) : C
+postop_proc(::Union{typeof(*),typeof(\)}, C, ::UpperOrUnitUpperTriangular, ::UpperHessenberg) = UpperHessenberg(C)
+postop_proc(::Union{typeof(*),typeof(\)}, C, B::Bidiagonal, ::UpperHessenberg) = B.uplo == 'U' ? UpperHessenberg(C) : C
 
 /(H::UpperHessenberg, D::Diagonal) = UpperHessenberg(H.data / D)
-function /(H::UpperHessenberg, U::UpperTriangular)
-    HH = _rdiv!(matprod_dest(H, U, promote_op(/, eltype(H), eltype(U))), H, U)
-    UpperHessenberg(HH)
-end
-\(D::Diagonal, H::UpperHessenberg) = UpperHessenberg(D \ H.data)
-function /(H::UpperHessenberg, U::UnitUpperTriangular)
-    HH = _rdiv!(matprod_dest(H, U, promote_op(/, eltype(H), eltype(U))), H, U)
-    UpperHessenberg(HH)
-end
 
-function \(U::UpperTriangular, H::UpperHessenberg)
-    HH = ldiv!(matprod_dest(U, H, promote_op(\, eltype(U), eltype(H))), U, H)
-    UpperHessenberg(HH)
-end
-function \(U::UnitUpperTriangular, H::UpperHessenberg)
-    HH = ldiv!(matprod_dest(U, H, promote_op(\, eltype(U), eltype(H))), U, H)
-    UpperHessenberg(HH)
-end
+\(D::Diagonal, H::UpperHessenberg) = UpperHessenberg(D \ H.data)
 
 AdjUpperHessenberg{T,S<:UpperHessenberg{T}} = Adjoint{T, S}
 TransUpperHessenberg{T,S<:UpperHessenberg{T}} = Transpose{T, S}
 AdjOrTransUpperHessenberg{T,S<:UpperHessenberg{T}} = AdjOrTrans{T, S}
 
-function (\)(H::Union{UpperHessenberg,AdjOrTransUpperHessenberg}, B::AbstractVecOrMat)
-    TFB = typeof(oneunit(eltype(H)) \ oneunit(eltype(B)))
-    return ldiv!(H, copy_similar(B, TFB))
-end
+(\)(H::Union{UpperHessenberg,AdjOrTransUpperHessenberg}, B::AbstractVecOrMat) =
+    ldiv!(H, copyto!(matop_dest(\, H, B), B))
 
 (/)(B::AbstractMatrix, H::UpperHessenberg) = _rdiv(B, H)
 (/)(B::AbstractMatrix, H::AdjUpperHessenberg) = _rdiv(B, H)
 (/)(B::AbstractMatrix, H::TransUpperHessenberg) = _rdiv(B, H)
-function _rdiv(B, H)
-    TFB = typeof(oneunit(eltype(B)) / oneunit(eltype(H)))
-    return rdiv!(copy_similar(B, TFB), H)
-end
+
+_rdiv(B, H) = rdiv!(copyto!(matop_dest(/, B, H), B), H)
 
 ldiv!(H::AdjOrTransUpperHessenberg, B::AbstractVecOrMat) =
     (rdiv!(wrapperop(H)(B), parent(H)); B)
@@ -429,6 +406,68 @@ function dot(x::AbstractVector, H::UpperHessenberg, y::AbstractVector)
     end
     return r
 end
+
+# faster eigenvalues, since we can skip the intermediate step of Hessenberg factorization.
+# note: permute==true is ignored, since that could spoil the upper-Hessenberg structure
+function eigvals!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasComplex}
+    LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1))
+    return sorteig!(LAPACK.hseqr!('E', 'N', 1, size(H,1), H.data, H.data)[3], sortby)
+end
+function eigvals!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasReal}
+    LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1))
+    _, _, vals = LAPACK.hseqr!('E', 'N', 1, size(H,1), H.data, H.data)
+    return sorteig!(isreal(vals) ? real(vals) : vals, sortby)
+end
+
+
+function eigen!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasComplex}
+    ilo, ihi, s = LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1)) # balance by scaling
+    _, Z, vals = LAPACK.hseqr!(H.data)
+    LAPACK.trevc!('R', 'B', BlasInt[], H.data, Z, Z) # set Z to right eigenvecs
+    LAPACK.gebak!(scale ? 'S' : 'N', 'R', ilo, ihi, s, Z) # undo balancing
+    foreach(eigvec_normalize!, eachcol(Z)) # normalize eigenvecs
+    return Eigen(sorteig!(vals, Z, sortby)...)
+end
+
+function eigen!(H::UpperHessenberg{T, <:StridedMatrix{T}}; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) where {T<:BlasReal}
+    ilo, ihi, s = LAPACK.gebal!(scale ? 'S' : 'N', triu!(H.data, -1)) # balance by scaling
+    _, Z, vals = LAPACK.hseqr!(H.data)
+    LAPACK.trevc!('R', 'B', BlasInt[], H.data, Z, Z) # set Z to right eigenvecs (for complex, see below)
+    LAPACK.gebak!(scale ? 'S' : 'N', 'R', ilo, ihi, s, Z) # undo balancing
+    if isreal(vals)
+        foreach(eigvec_normalize!, eachcol(Z)) # normalize eigenvecs
+        return Eigen(sorteig!(real(vals), Z, sortby)...)
+    else # complex eigenvalues: real/imag eigenvec parts stored in consecutive cols of Z
+        V = complex(Z)
+        k = 1
+        @inbounds while k <= length(vals)
+            if isreal(vals[k])
+                k += 1
+            else # complex-conjugate pair
+                for j = 1:size(V,1)
+                    V[j, k] = complex(Z[j,k], Z[j,k+1])
+                    V[j, k+1] = complex(Z[j,k], -Z[j,k+1])
+                end
+                k += 2
+            end
+        end
+        foreach(eigvec_normalize!, eachcol(V)) # normalize eigenvecs
+        return Eigen(sorteig!(vals, V, sortby)...)
+    end
+end
+
+# preserve the wrapper for eigensolves with UpperHessenberg
+eigencopy_oftype(H::UpperHessenberg, S) = UpperHessenberg(eigencopy_oftype(H.data, S))
+
+# fallback to dense algorithms
+eigvals!(H::UpperHessenberg; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) =
+    eigvals!(triu!(H.data,-1); permute, scale, sortby)
+eigen!(H::UpperHessenberg; permute::Bool=false, scale::Bool=true, sortby::Union{Function,Nothing}=eigsortby) =
+    eigen!(triu!(H.data,-1); permute, scale, sortby)
+
+
+schur!(H::UpperHessenberg{T}) where {T<:BlasFloat} = Schur(LinearAlgebra.LAPACK.hseqr!(H.data)...)
+schur!(H::UpperHessenberg) = schur!(triu!(H.data, -1)) # fallback to dense algorithm
 
 ######################################################################################
 # Hessenberg factorizations Q(H+μI)Q' of A+μI:

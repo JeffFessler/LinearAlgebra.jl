@@ -56,10 +56,9 @@ function (*)(A::StridedMaybeAdjOrTransMat{T}, x::StridedVector{S}) where {T<:Bla
     y = isconcretetype(TS) ? convert(AbstractVector{TS}, x) : x
     mul!(similar(x, TS, size(A,1)), A, y)
 end
-function (*)(A::AbstractMatrix{T}, x::AbstractVector{S}) where {T,S}
+function (*)(A::AbstractMatrix, x::AbstractVector)
     matmul_size_check(size(A), size(x))
-    TS = promote_op(matprod, T, S)
-    mul!(similar(x, TS, axes(A,1)), A, x)
+    mul!(matop_dest(*, A, x), A, x)
 end
 
 # these will throw a DimensionMismatch unless B has 1 row (or 1 col for transposed case):
@@ -119,19 +118,31 @@ julia> [1 1; 0 1] * [1 0; 1 1]
 mul(A::AbstractMatrix, B::AbstractMatrix) = _mul(A, B)
 function _mul(A::AbstractMatrix, B::AbstractMatrix)
     matmul_size_check(size(A), size(B))
-    TS = promote_op(matprod, eltype(A), eltype(B))
-    mul!(matprod_dest(A, B, TS), A, B)
+    postop_proc(*, mul!(matop_dest(*, A, B), A, B), A, B)
 end
 
 """
-    matprod_dest(A, B, T)
+    matop_dest(op, A, B)
 
-Return an appropriate `AbstractArray` with element type `T` that may be used to store the result of `A * B`.
+Return an appropriate `AbstractArray` that may be used to store the result of `op(A, B)`,
+where `op` is one of `*`, `/`, or `\\`.
 
-!!! compat
-    This function requires at least Julia 1.11
+!!! compat "Julia 1.14"
+    This function requires at least Julia 1.14.
 """
-matprod_dest(A, B, T) = similar(B, T, (size(A, 1), size(B, 2)))
+matop_dest(::typeof(\), A, B) = similar(B, promote_op(\, eltype(A), eltype(B)), size(B))
+matop_dest(::typeof(/), A, B) = similar(A, promote_op(/, eltype(A), eltype(B)), size(A))
+matop_dest(::typeof(*), A, B) = similar(B, promote_op(matprod, eltype(A), eltype(B)), (size(A, 1), size(B, 2)))
+matop_dest(::typeof(*), A, b::AbstractVector) = similar(b, promote_op(matprod, eltype(A), eltype(b)), axes(A, 1))
+
+const MulOrDiv = Union{typeof(*), typeof(\), typeof(/)}
+
+"""
+    postop_proc(op, C, A, B)
+
+Post-processing of `C`, which is assumed to be the result of `op(A, B)`.
+"""
+postop_proc(::MulOrDiv, C, _, _) = C
 
 # optimization for dispatching to BLAS, e.g. *(::Matrix{Float32}, ::Matrix{Float64})
 # but avoiding the case *(::Matrix{<:BlasComplex}, ::Matrix{<:BlasReal})
@@ -617,14 +628,14 @@ function generic_syrk!(C::StridedMatrix{T}, A::StridedVecOrMat{T}, conjugate::Bo
             for k ∈ 1:n, j ∈ 1:m
                 αA_jk = @stable_muladdmul MulAddMul(α, false)(A[j, k])
                 for i ∈ 1:j
-                    C[i, j] += A[i, k] * αA_jk
+                    C[i, j] = muladd(A[i, k], αA_jk, C[i, j])
                 end
             end
         else
             for j ∈ 1:n, i ∈ 1:j
                 temp = A[1, i] * A[1, j]
                 for k ∈ 2:m
-                    temp += A[k, i] * A[k, j]
+                    temp = muladd(A[k, i], A[k, j], temp)
                 end
                 C[i, j] += @stable_muladdmul MulAddMul(α, false)(temp)
             end
@@ -634,7 +645,7 @@ function generic_syrk!(C::StridedMatrix{T}, A::StridedVecOrMat{T}, conjugate::Bo
             for k ∈ 1:n, j ∈ 1:m
                 αA_jk_bar = @stable_muladdmul MulAddMul(α, false)(conj(A[j, k]))
                 for i ∈ 1:j-1
-                    C[i, j] += A[i, k] * αA_jk_bar
+                    C[i, j] = muladd(A[i, k], αA_jk_bar, C[i, j])
                 end
                 C[j, j] += @stable_muladdmul MulAddMul(α, false)(abs2(A[j, k]))
             end
@@ -643,7 +654,7 @@ function generic_syrk!(C::StridedMatrix{T}, A::StridedVecOrMat{T}, conjugate::Bo
                 for i ∈ 1:j-1
                     temp = conj(A[1, i]) * A[1, j]
                     for k ∈ 2:m
-                        temp += conj(A[k, i]) * A[k, j]
+                        temp = muladd(conj(A[k, i]), A[k, j], temp)
                     end
                     C[i, j] += @stable_muladdmul MulAddMul(α, false)(temp)
                 end
@@ -1213,9 +1224,6 @@ function _generic_matmatmul_generic!(C, A, B, alpha, beta)
 end
 
 # multiply 2x2 matrices
-function matmul2x2(tA, tB, A::AbstractMatrix{T}, B::AbstractMatrix{S}) where {T,S}
-    matmul2x2!(similar(B, promote_op(matprod, T, S), 2, 2), tA, tB, A, B)
-end
 
 function __matmul_checks(C, A, B, sz)
     require_one_based_indexing(C, A, B)
@@ -1288,9 +1296,6 @@ function matmul2x2!(C::AbstractMatrix, tA, tB, A::AbstractMatrix, B::AbstractMat
 end
 
 # Multiply 3x3 matrices
-function matmul3x3(tA, tB, A::AbstractMatrix{T}, B::AbstractMatrix{S}) where {T,S}
-    matmul3x3!(similar(B, promote_op(matprod, T, S), 3, 3), tA, tB, A, B)
-end
 
 # separate function with the core of matmul3x3! that doesn't depend on a MulAddMul
 function _matmul3x3_elements(C::AbstractMatrix, tA, tB, A::AbstractMatrix, B::AbstractMatrix)
@@ -1427,6 +1432,10 @@ end
 
 mat_vec_scalar(A, x, γ) = A * (x * γ)  # fallback
 mat_vec_scalar(A::StridedMaybeAdjOrTransMat, x::StridedVector, γ) = _mat_vec_scalar(A, x, γ)
+mat_vec_scalar(A::StridedMatrix{Complex{T}}, x::StridedVector{T}, γ) where {T<:BlasReal} =
+    (A * x) * γ
+mat_vec_scalar(A::StridedMatrix{Complex{T}}, x::StridedVector{T}, γ::Real) where {T<:BlasReal} =
+    _mat_vec_scalar(A, x, γ)
 mat_vec_scalar(A::AdjOrTransAbsVec, x::StridedVector, γ) = (A * x) * γ
 
 function _mat_vec_scalar(A, x, γ)
@@ -1437,6 +1446,10 @@ end
 
 mat_mat_scalar(A, B, γ) = (A*B) * γ # fallback
 mat_mat_scalar(A::StridedMaybeAdjOrTransMat, B::StridedMaybeAdjOrTransMat, γ) =
+    _mat_mat_scalar(A, B, γ)
+mat_mat_scalar(A::StridedMatrix{Complex{T}}, B::StridedMaybeAdjOrTransMat{T}, γ) where {T<:BlasReal} =
+    (A*B) * γ
+mat_mat_scalar(A::StridedMatrix{Complex{T}}, B::StridedMaybeAdjOrTransMat{T}, γ::Real) where {T<:BlasReal} =
     _mat_mat_scalar(A, B, γ)
 
 function _mat_mat_scalar(A, B, γ)
