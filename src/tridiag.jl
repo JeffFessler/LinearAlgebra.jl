@@ -169,9 +169,9 @@ _copyto_banded!(dest::SymTridiagonal, src::SymTridiagonal) =
     (copyto!(dest.dv, src.dv); copyto!(dest.ev, src.ev); dest)
 
 #Elementary operations
-for func in (:conj, :copy, :real, :imag)
-    @eval ($func)(M::SymTridiagonal) = SymTridiagonal(($func)(M.dv), ($func)(M.ev))
-end
+# for func in (:conj, :copy, :real, :imag)
+#     @eval ($func)(M::SymTridiagonal) = SymTridiagonal(($func)(M.dv), ($func)(M.ev))
+# end
 isreal(S::SymTridiagonal) = isreal(S.dv) && isreal(S.ev)
 
 transpose(S::SymTridiagonal) = S
@@ -215,11 +215,11 @@ function diag(M::SymTridiagonal, n::Integer=0)
     return v
 end
 
-+(A::SymTridiagonal, B::SymTridiagonal) = SymTridiagonal(A.dv+B.dv, A.ev+B.ev)
--(A::SymTridiagonal, B::SymTridiagonal) = SymTridiagonal(A.dv-B.dv, A.ev-B.ev)
--(A::SymTridiagonal) = SymTridiagonal(-A.dv, -A.ev)
-*(A::SymTridiagonal, B::Number) = SymTridiagonal(A.dv*B, A.ev*B)
-*(B::Number, A::SymTridiagonal) = SymTridiagonal(B*A.dv, B*A.ev)
+# +(A::SymTridiagonal, B::SymTridiagonal) = SymTridiagonal(A.dv+B.dv, A.ev+B.ev)
+# -(A::SymTridiagonal, B::SymTridiagonal) = SymTridiagonal(A.dv-B.dv, A.ev-B.ev)
+# -(A::SymTridiagonal) = SymTridiagonal(-A.dv, -A.ev)
+# *(A::SymTridiagonal, B::Number) = SymTridiagonal(A.dv*B, A.ev*B)
+# *(B::Number, A::SymTridiagonal) = SymTridiagonal(B*A.dv, B*A.ev)
 function rmul!(A::SymTridiagonal, x::Number)
     if size(A,1) > 2
         # ensure that zeros are preserved on scaling
@@ -242,8 +242,8 @@ function lmul!(x::Number, B::SymTridiagonal)
     lmul!(x, B.ev)
     return B
 end
-/(A::SymTridiagonal, B::Number) = SymTridiagonal(A.dv/B, A.ev/B)
-\(B::Number, A::SymTridiagonal) = SymTridiagonal(B\A.dv, B\A.ev)
+# /(A::SymTridiagonal, B::Number) = SymTridiagonal(A.dv/B, A.ev/B)
+# \(B::Number, A::SymTridiagonal) = SymTridiagonal(B\A.dv, B\A.ev)
 ==(A::SymTridiagonal{<:Number}, B::SymTridiagonal{<:Number}) =
     (A.dv == B.dv) && (A.ev == B.ev)
 ==(A::SymTridiagonal, B::SymTridiagonal) =
@@ -725,11 +725,11 @@ function _copyto_banded!(dest::Tridiagonal, src::Tridiagonal)
 end
 
 #Elementary operations
-for func in (:conj, :copy, :real, :imag)
-    @eval function ($func)(M::Tridiagonal)
-        Tridiagonal(($func)(M.dl), ($func)(M.d), ($func)(M.du))
-    end
-end
+# for func in (:conj, :copy, :real, :imag)
+#     @eval function ($func)(M::Tridiagonal)
+#         Tridiagonal(($func)(M.dl), ($func)(M.d), ($func)(M.du))
+#     end
+# end
 isreal(T::Tridiagonal) = isreal(T.dl) && isreal(T.d) && isreal(T.du)
 
 adjoint(S::Tridiagonal{<:Number}) = Tridiagonal(vec(adjoint(S.du)), vec(adjoint(S.d)), vec(adjoint(S.dl)))
@@ -939,11 +939,11 @@ tr(M::Tridiagonal) = sum(M.d)
 # Generic methods #
 ###################
 
-+(A::Tridiagonal, B::Tridiagonal) = Tridiagonal(A.dl+B.dl, A.d+B.d, A.du+B.du)
--(A::Tridiagonal, B::Tridiagonal) = Tridiagonal(A.dl-B.dl, A.d-B.d, A.du-B.du)
--(A::Tridiagonal) = Tridiagonal(-A.dl, -A.d, -A.du)
-*(A::Tridiagonal, B::Number) = Tridiagonal(A.dl*B, A.d*B, A.du*B)
-*(B::Number, A::Tridiagonal) = Tridiagonal(B*A.dl, B*A.d, B*A.du)
+# +(A::Tridiagonal, B::Tridiagonal) = Tridiagonal(A.dl+B.dl, A.d+B.d, A.du+B.du)
+# -(A::Tridiagonal, B::Tridiagonal) = Tridiagonal(A.dl-B.dl, A.d-B.d, A.du-B.du)
+# -(A::Tridiagonal) = Tridiagonal(-A.dl, -A.d, -A.du)
+# *(A::Tridiagonal, B::Number) = Tridiagonal(A.dl*B, A.d*B, A.du*B)
+# *(B::Number, A::Tridiagonal) = Tridiagonal(B*A.dl, B*A.d, B*A.du)
 function rmul!(T::Tridiagonal, x::Number)
     if size(T,1) > 2
         # ensure that zeros are preserved on scaling
@@ -968,8 +968,8 @@ function lmul!(x::Number, T::Tridiagonal)
     lmul!(x, T.du)
     return T
 end
-/(A::Tridiagonal, B::Number) = Tridiagonal(A.dl/B, A.d/B, A.du/B)
-\(B::Number, A::Tridiagonal) = Tridiagonal(B\A.dl, B\A.d, B\A.du)
+# /(A::Tridiagonal, B::Number) = Tridiagonal(A.dl/B, A.d/B, A.du/B)
+# \(B::Number, A::Tridiagonal) = Tridiagonal(B\A.dl, B\A.d, B\A.du)
 
 ==(A::Tridiagonal, B::Tridiagonal) = (A.dl==B.dl) && (A.d==B.d) && (A.du==B.du)
 function ==(A::Tridiagonal, B::SymTridiagonal)

@@ -42,11 +42,11 @@ for t in (:LowerTriangular, :UnitLowerTriangular, :UpperTriangular, :UnitUpperTr
         # storage type of A (not wrapped in a triangular type). The following method covers these cases.
         similar(A::$t, ::Type{T}, dims::Dims{N}) where {T,N} = similar(parent(A), T, dims)
 
-        copy(A::$t) = $t(copy(A.data))
+        # copy(A::$t) = $t(copy(A.data))
         Base.unaliascopy(A::$t) = $t(Base.unaliascopy(A.data))
 
-        real(A::$t{<:Complex}) = (B = real(A.data); $t(B))
-        real(A::$t{<:Complex, <:StridedMaybeAdjOrTransMat}) = $t(real.(A))
+        # real(A::$t{<:Complex}) = (B = real(A.data); $t(B))
+        # real(A::$t{<:Complex, <:StridedMaybeAdjOrTransMat}) = $t(real.(A))
     end
 end
 
@@ -158,29 +158,6 @@ function Matrix{T}(U::UpperOrLowerTriangular) where {T}
     M = Matrix{T}(undef, size(U))
     copy!(M, U)
     return M
-end
-
-imag(A::UpperTriangular) = UpperTriangular(imag(A.data))
-imag(A::LowerTriangular) = LowerTriangular(imag(A.data))
-imag(A::UpperTriangular{<:Any,<:StridedMaybeAdjOrTransMat}) = imag.(A)
-imag(A::LowerTriangular{<:Any,<:StridedMaybeAdjOrTransMat}) = imag.(A)
-function imag(A::UnitLowerTriangular)
-    L = LowerTriangular(A.data)
-    Lim = similar(L) # must be mutable to set diagonals to zero
-    Lim .= imag.(L)
-    for i in axes(Lim,1)
-        Lim[i,i] = zero(Lim[i,i])
-    end
-    return Lim
-end
-function imag(A::UnitUpperTriangular)
-    U = UpperTriangular(A.data)
-    Uim = similar(U) # must be mutable to set diagonals to zero
-    Uim .= imag.(U)
-    for i in axes(Uim,1)
-        Uim[i,i] = zero(Uim[i,i])
-    end
-    return Uim
 end
 
 parent(A::UpperOrLowerTriangular) = A.data
@@ -552,31 +529,31 @@ diag(A::UpperOrLowerTriangular) = diag(A.data)
 diag(A::Union{UnitLowerTriangular, UnitUpperTriangular}) = fill(oneunit(eltype(A)), size(A,1))
 
 # Unary operations
--(A::LowerTriangular) = LowerTriangular(-A.data)
--(A::UpperTriangular) = UpperTriangular(-A.data)
-function -(A::UnitLowerTriangular)
-    Adata = A.data
-    Anew = similar(Adata) # must be mutable, even if Adata is not
-    @. Anew = -Adata
-    for i in axes(A, 1)
-        Anew[i, i] = -A[i, i]
-    end
-    LowerTriangular(Anew)
-end
-function -(A::UnitUpperTriangular)
-    Adata = A.data
-    Anew = similar(Adata) # must be mutable, even if Adata is not
-    @. Anew = -Adata
-    for i in axes(A, 1)
-        Anew[i, i] = -A[i, i]
-    end
-    UpperTriangular(Anew)
-end
+# -(A::LowerTriangular) = LowerTriangular(-A.data)
+# -(A::UpperTriangular) = UpperTriangular(-A.data)
+# function -(A::UnitLowerTriangular)
+#     Adata = A.data
+#     Anew = similar(Adata) # must be mutable, even if Adata is not
+#     @. Anew = -Adata
+#     for i in axes(A, 1)
+#         Anew[i, i] = -A[i, i]
+#     end
+#     LowerTriangular(Anew)
+# end
+# function -(A::UnitUpperTriangular)
+#     Adata = A.data
+#     Anew = similar(Adata) # must be mutable, even if Adata is not
+#     @. Anew = -Adata
+#     for i in axes(A, 1)
+#         Anew[i, i] = -A[i, i]
+#     end
+#     UpperTriangular(Anew)
+# end
 
-# use broadcasting if the parents are strided, where we loop only over the triangular part
-for TM in (:LowerTriangular, :UpperTriangular)
-    @eval -(A::$TM{<:Any, <:StridedMaybeAdjOrTransMat}) = broadcast(-, A)
-end
+# # use broadcasting if the parents are strided, where we loop only over the triangular part
+# for TM in (:LowerTriangular, :UpperTriangular)
+#     @eval -(A::$TM{<:Any, <:StridedMaybeAdjOrTransMat}) = broadcast(-, A)
+# end
 
 tr(A::UpperOrLowerTriangular) = tr(A.data)
 tr(A::Union{UnitLowerTriangular, UnitUpperTriangular}) = size(A, 1) * oneunit(eltype(A))

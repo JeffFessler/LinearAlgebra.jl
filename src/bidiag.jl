@@ -310,9 +310,9 @@ size(M::Bidiagonal) = (n = length(M.dv); (n, n))
 axes(M::Bidiagonal) = (ax = axes(M.dv, 1); (ax, ax))
 
 #Elementary operations
-for func in (:conj, :copy, :real, :imag)
-    @eval ($func)(M::Bidiagonal) = Bidiagonal(($func)(M.dv), ($func)(M.ev), M.uplo)
-end
+# for func in (:conj, :copy, :real, :imag)
+#     @eval ($func)(M::Bidiagonal) = Bidiagonal(($func)(M.dv), ($func)(M.ev), M.uplo)
+# end
 isreal(M::Bidiagonal) = isreal(M.dv) && isreal(M.ev)
 
 adjoint(B::Bidiagonal) = Bidiagonal(_vecadjoint(B.dv), _vecadjoint(B.ev), B.uplo == 'U' ? :L : :U)
@@ -460,9 +460,9 @@ function -(A::Bidiagonal, B::Bidiagonal)
     end
 end
 
--(A::Bidiagonal)=Bidiagonal(-A.dv,-A.ev,A.uplo)
-*(A::Bidiagonal, B::Number) = Bidiagonal(A.dv*B, A.ev*B, A.uplo)
-*(B::Number, A::Bidiagonal) = Bidiagonal(B*A.dv, B*A.ev, A.uplo)
+# -(A::Bidiagonal)=Bidiagonal(-A.dv,-A.ev,A.uplo)
+# *(A::Bidiagonal, B::Number) = Bidiagonal(A.dv*B, A.ev*B, A.uplo)
+# *(B::Number, A::Bidiagonal) = Bidiagonal(B*A.dv, B*A.ev, A.uplo)
 function rmul!(B::Bidiagonal, x::Number)
     if size(B,1) > 1
         isupper = B.uplo == 'U'
@@ -489,8 +489,8 @@ function lmul!(x::Number, B::Bidiagonal)
     lmul!(x, B.ev)
     return B
 end
-/(A::Bidiagonal, B::Number) = Bidiagonal(A.dv/B, A.ev/B, A.uplo)
-\(B::Number, A::Bidiagonal) = Bidiagonal(B\A.dv, B\A.ev, A.uplo)
+# /(A::Bidiagonal, B::Number) = Bidiagonal(A.dv/B, A.ev/B, A.uplo)
+# \(B::Number, A::Bidiagonal) = Bidiagonal(B\A.dv, B\A.ev, A.uplo)
 
 function ==(A::Bidiagonal, B::Bidiagonal)
     if A.uplo == B.uplo

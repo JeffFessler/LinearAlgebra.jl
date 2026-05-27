@@ -251,7 +251,7 @@ end
 
 parent(D::Diagonal) = D.diag
 
-copy(D::Diagonal) = Diagonal(copy(D.diag))
+# copy(D::Diagonal) = Diagonal(copy(D.diag))
 
 Base._reverse(A::Diagonal, dims) = reverse!(Matrix(A); dims)
 Base._reverse(A::Diagonal, ::Colon) = Diagonal(reverse(A.diag))

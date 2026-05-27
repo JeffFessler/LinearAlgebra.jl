@@ -72,9 +72,10 @@ AbstractMatrix{T}(H::UpperHessenberg{T}) where {T} = copy(H)
 Base.dataids(A::UpperHessenberg) = Base.dataids(parent(A))
 Base.unaliascopy(A::UpperHessenberg) = UpperHessenberg(Base.unaliascopy(parent(A)))
 
+# TODO: provide a specialized copyto!(::UpperHessenberg, ::UpperHessenberg) method and rely on fallback
 copy(H::UpperHessenberg) = UpperHessenberg(copy(H.data))
-real(H::UpperHessenberg{<:Complex}) = UpperHessenberg(triu!(real(H.data),-1))
-imag(H::UpperHessenberg) = UpperHessenberg(triu!(imag(H.data),-1))
+# real(H::UpperHessenberg{<:Complex}) = UpperHessenberg(triu!(real(H.data),-1))
+# imag(H::UpperHessenberg) = UpperHessenberg(triu!(imag(H.data),-1))
 
 Base.@constprop :aggressive function istriu(A::UpperHessenberg, k::Integer=0)
     k <= -1 && return true
@@ -121,7 +122,7 @@ end
 Base.copy(A::Adjoint{<:Any,<:UpperHessenberg}) = tril!(adjoint!(similar(A.parent.data), A.parent.data), 1)
 Base.copy(A::Transpose{<:Any,<:UpperHessenberg}) = tril!(transpose!(similar(A.parent.data), A.parent.data), 1)
 
--(A::UpperHessenberg) = UpperHessenberg(-A.data)
+# -(A::UpperHessenberg) = UpperHessenberg(-A.data)
 rmul!(H::UpperHessenberg, x::Number) = (rmul!(H.data, x); H)
 lmul!(x::Number, H::UpperHessenberg) = (lmul!(x, H.data); H)
 
