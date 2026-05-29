@@ -71,10 +71,8 @@ SymTridiagonal(dv::V, ev::V) where {T,V<:AbstractVector{T}} = SymTridiagonal{T}(
 SymTridiagonal{T}(dv::V, ev::V) where {T,V<:AbstractVector{T}} = SymTridiagonal{T,V}(dv, ev)
 function SymTridiagonal{T}(dv::AbstractVector, ev::AbstractVector) where {T}
     d = convert(AbstractVector{T}, dv)::AbstractVector{T}
-    e = convert(AbstractVector{T}, ev)::AbstractVector{T}
-    typeof(d) == typeof(e) ?
-        SymTridiagonal{T}(d, e) :
-        throw(ArgumentError("diagonal vectors needed to be convertible to same type"))
+    e = convert(typeof(d), ev)::AbstractVector{T}
+    return SymTridiagonal{T}(d, e)
 end
 SymTridiagonal(d::AbstractVector{T}, e::AbstractVector{S}) where {T,S} =
     SymTridiagonal{promote_type(T, S)}(d, e)
