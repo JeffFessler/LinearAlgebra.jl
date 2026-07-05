@@ -567,10 +567,22 @@ generic_normInf(x) = float(mapreduce(norm, max, x))
 
 generic_norm1(x) = mapreduce(float ∘ norm, +, x)
 
+"""
+    norm_sqr(x)
+Compute the squared Euclidean norm of `x` efficiently,
+i.e., typically as `sum(abs2, x)`.
+
+For types other than `AbstractArray` or `Number`,
+fall back to `norm(x)^2`,
+which is less efficient
+and is not auto-differentiable at `zero`
+due to the `sqrt` in `norm`.
+"""
+norm_sqr(x::AbstractArray) = sum(norm_sqr, x)
 # faster computation of norm(x)^2, avoiding overflow for integers
-norm_sqr(x) = norm(x)^2
-norm_sqr(x::Number) = abs2(x)
 norm_sqr(x::Union{T,Complex{T},Rational{T}}) where {T<:Integer} = abs2(float(x))
+norm_sqr(x::Number) = abs2(float(x))
+norm_sqr(x) = norm(x)^2 # fallback
 
 function generic_norm2(x)
     maxabs = normInf(x)
